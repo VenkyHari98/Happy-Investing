@@ -1,0 +1,30 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env
+
+# Generated data — run the scripts to regenerate locally
+Source Data/Downloaded Data/
+web/data/
+
+# Raw session transcripts (large, not needed for code)
+Live Classes/**/*.txt
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+Error Log/
+*.log
+
+# Jupyter
+.ipynb_checkpoints/

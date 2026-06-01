@@ -1,0 +1,420 @@
+TCS;Large Cap;Non Finance
+LICI;Large Cap;Non Finance
+HINDUNILVR;Large Cap;Non Finance
+INFY;Large Cap;Non Finance
+SUNPHARMA;Large Cap;Non Finance
+MARUTI;Large Cap;Non Finance
+ITC;Large Cap;Non Finance
+HCLTECH;Large Cap;Non Finance
+BEL;Large Cap;Non Finance
+HAL;Large Cap;Non Finance
+COALINDIA;Large Cap;Non Finance
+NESTLEIND;Large Cap;Non Finance
+DMART;Large Cap;Non Finance
+ASIANPAINT;Large Cap;Non Finance
+WIPRO;Large Cap;Non Finance
+EICHERMOT;Large Cap;Non Finance
+SBILIFE;Large Cap;Non Finance
+VBL;Large Cap;Non Finance
+DIVISLAB;Large Cap;Non Finance
+BSE;Large Cap;Non Finance
+SOLARINDS;Large Cap;Non Finance
+ICICIAMC;Large Cap;Non Finance
+POWERINDIA;Large Cap;Non Finance
+HYUNDAI;Large Cap;Non Finance
+PIDILITIND;Large Cap;Non Finance
+CUMMINSIND;Large Cap;Non Finance
+ABB;Large Cap;Non Finance
+POLYCAB;Large Cap;Non Finance
+TECHM;Large Cap;Non Finance
+CGPOWER;Large Cap;Non Finance
+SIEMENS;Large Cap;Non Finance
+BRITANNIA;Large Cap;Non Finance
+ENRIN;Large Cap;Non Finance
+GVT&D;Large Cap;Non Finance
+GROWW;Large Cap;Non Finance
+LTM;Large Cap;Non Finance
+HDFCAMC;Large Cap;Non Finance
+CIPLA;Large Cap;Non Finance
+DRREDDY;Large Cap;Non Finance
+BOSCHLTD;Mid Cap;Non Finance
+MARICO;Mid Cap;Non Finance
+LUPIN;Mid Cap;Non Finance
+LGEINDIA;Mid Cap;Non Finance
+MAZDOCK;Mid Cap;Non Finance
+HEROMOTOCO;Mid Cap;Non Finance
+INDHOTEL;Mid Cap;Non Finance
+UNITDSPR;Mid Cap;Non Finance
+ICICIGI;Mid Cap;Non Finance
+WAAREEENER;Mid Cap;Non Finance
+MCX;Mid Cap;Non Finance
+AUROPHARMA;Mid Cap;Non Finance
+OFSS;Mid Cap;Non Finance
+PERSISTENT;Mid Cap;Non Finance
+DABUR;Mid Cap;Non Finance
+NMDC;Mid Cap;Non Finance
+HAVELLS;Mid Cap;Non Finance
+NATIONALUM;Mid Cap;Non Finance
+SUZLON;Mid Cap;Non Finance
+DIXON;Mid Cap;Non Finance
+NAM-INDIA;Mid Cap;Non Finance
+GICRE;Mid Cap;Non Finance
+GLENMARK;Mid Cap;Non Finance
+ALKEM;Mid Cap;Non Finance
+SCHAEFFLER;Mid Cap;Non Finance
+OBEROIRLTY;Mid Cap;Non Finance
+LINDEINDIA;Mid Cap;Non Finance
+JSL;Mid Cap;Non Finance
+COFORGE;Mid Cap;Non Finance
+TIINDIA;Mid Cap;Non Finance
+ABBOTINDIA;Mid Cap;Non Finance
+BERGEPAINT;Mid Cap;Non Finance
+COLPAL;Mid Cap;Non Finance
+VMM;Mid Cap;Non Finance
+MRF;Mid Cap;Non Finance
+COROMANDEL;Mid Cap;Non Finance
+THERMAX;Mid Cap;Non Finance
+HINDCOPPER;Mid Cap;Non Finance
+APLAPOLLO;Mid Cap;Non Finance
+PATANJALI;Mid Cap;Non Finance
+KEI;Mid Cap;Non Finance
+APARINDS;Mid Cap;Non Finance
+BDL;Mid Cap;Non Finance
+RADICO;Mid Cap;Non Finance
+SUPREMEIND;Mid Cap;Non Finance
+PIIND;Mid Cap;Non Finance
+ANTHEM;Mid Cap;Non Finance
+IRCTC;Mid Cap;Non Finance
+PAGEIND;Mid Cap;Non Finance
+MPHASIS;Mid Cap;Non Finance
+AIIL;Mid Cap;Non Finance
+PETRONET;Mid Cap;Non Finance
+ASTRAL;Mid Cap;Non Finance
+COCHINSHIP;Mid Cap;Non Finance
+IPCALAB;Mid Cap;Non Finance
+ENDURANCE;Mid Cap;Non Finance
+CONCOR;Mid Cap;Non Finance
+GLAXO;Mid Cap;Non Finance
+AJANTPHARM;Mid Cap;Non Finance
+GLAND;Mid Cap;Non Finance
+3MINDIA;Mid Cap;Non Finance
+LTTS;Mid Cap;Non Finance
+AIAENG;Mid Cap;Non Finance
+SONACOMS;Mid Cap;Non Finance
+GODFRYPHLP;Mid Cap;Non Finance
+JBCHEPHARM;Mid Cap;Non Finance
+WELCORP;Small Cap;Non Finance
+BLUESTARCO;Small Cap;Non Finance
+MEDANTA;Small Cap;Non Finance
+ESCORTS;Small Cap;Non Finance
+KPRMILL;Small Cap;Non Finance
+ANGELONE;Small Cap;Non Finance
+PGHH;Small Cap;Non Finance
+HEXT;Small Cap;Non Finance
+GRSE;Small Cap;Non Finance
+HONAUT;Small Cap;Non Finance
+CPPLUS;Small Cap;Non Finance
+ANANDRATHI;Small Cap;Non Finance
+HSCL;Small Cap;Non Finance
+CRISIL;Small Cap;Non Finance
+ABSLAMC;Small Cap;Non Finance
+ZFCVINDIA;Small Cap;Non Finance
+GODIGIT;Small Cap;Non Finance
+IKS;Small Cap;Non Finance
+TATATECH;Small Cap;Non Finance
+NUVAMA;Small Cap;Non Finance
+TIMKEN;Small Cap;Non Finance
+LALPATHLAB;Small Cap;Non Finance
+TATAELXSI;Small Cap;Non Finance
+SHYAMMETL;Small Cap;Non Finance
+FORCEMOT;Small Cap;Non Finance
+NBCC;Small Cap;Non Finance
+MSUMI;Small Cap;Non Finance
+GUJGASLTD;Small Cap;Non Finance
+AEGISLOG;Small Cap;Non Finance
+GILLETTE;Small Cap;Non Finance
+CDSL;Small Cap;Non Finance
+AWL;Small Cap;Non Finance
+SAILIFE;Small Cap;Non Finance
+TENNIND;Small Cap;Non Finance
+APOLLOTYRE;Small Cap;Non Finance
+ACUTAAS;Small Cap;Non Finance
+SUMICHEM;Small Cap;Non Finance
+GESHIP;Small Cap;Non Finance
+DATAPATTNS;Small Cap;Non Finance
+KAYNES;Small Cap;Non Finance
+RRKABEL;Small Cap;Non Finance
+IGL;Small Cap;Non Finance
+TRITURBINE;Small Cap;Non Finance
+ASTRAZEN;Small Cap;Non Finance
+NETWEB;Small Cap;Non Finance
+KPIL;Small Cap;Non Finance
+NEULANDLAB;Small Cap;Non Finance
+PFIZER;Small Cap;Non Finance
+GRINDWELL;Small Cap;Non Finance
+HBLENGINE;Small Cap;Non Finance
+NATCOPHARM;Small Cap;Non Finance
+KPITTECH;Small Cap;Non Finance
+ATUL;Small Cap;Non Finance
+AFFLE;Small Cap;Non Finance
+SYRMA;Small Cap;Non Finance
+TDPOWERSYS;Small Cap;Non Finance
+EMMVEE;Small Cap;Non Finance
+EIHOTEL;Small Cap;Non Finance
+BAYERCROP;Small Cap;Non Finance
+SAGILITY;Small Cap;Non Finance
+SUNTV;Small Cap;Non Finance
+GPIL;Small Cap;Non Finance
+SARDAEN;Small Cap;Non Finance
+CAMS;Small Cap;Non Finance
+GRANULES;Small Cap;Non Finance
+BELRISE;Small Cap;Non Finance
+CHAMBLFERT;Small Cap;Non Finance
+AVANTIFEED;Small Cap;Non Finance
+ANANTRAJ;Small Cap;Non Finance
+SANSERA;Small Cap;Non Finance
+CASTROLIND;Small Cap;Non Finance
+SUNDRMFAST;Small Cap;Non Finance
+ELGIEQUIP;Small Cap;Non Finance
+RATNAMANI;Small Cap;Non Finance
+KANSAINER;Small Cap;Non Finance
+EMAMILTD;Small Cap;Non Finance
+REDINGTON;Small Cap;Non Finance
+CIEINDIA;Small Cap;Non Finance
+CMPDI;Small Cap;Non Finance
+NAVA;Small Cap;Non Finance
+KAJARIACER;Small Cap;Non Finance
+GALLANTT;Small Cap;Non Finance
+FINCABLES;Small Cap;Non Finance
+GABRIEL;Small Cap;Non Finance
+544467;Small Cap;Non Finance
+ARE&M;Small Cap;Non Finance
+IGIL;Small Cap;Non Finance
+FRACTAL;Small Cap;Non Finance
+BIKAJI;Small Cap;Non Finance
+TECHNOE;Small Cap;Non Finance
+CAPLIPOINT;Small Cap;Non Finance
+POLYMED;Small Cap;Non Finance
+CHOICEIN;Small Cap;Non Finance
+CHENNPETRO;Small Cap;Non Finance
+BASF;Small Cap;Non Finance
+BEML;Small Cap;Non Finance
+TRAVELFOOD;Small Cap;Non Finance
+GSPL;Small Cap;Non Finance
+CEMPRO;Small Cap;Non Finance
+APLLTD;Small Cap;Non Finance
+ECLERX;Small Cap;Non Finance
+ZENTEC;Small Cap;Non Finance
+USHAMART;Small Cap;Non Finance
+KFINTECH;Small Cap;Non Finance
+AETHER;Small Cap;Non Finance
+KSB;Small Cap;Non Finance
+EIDPARRY;Small Cap;Non Finance
+FINEORG;Small Cap;Non Finance
+VINATIORGA;Small Cap;Non Finance
+INGERRAND;Small Cap;Non Finance
+PGEL;Small Cap;Non Finance
+VGUARD;Small Cap;Non Finance
+DOMS;Small Cap;Non Finance
+JSWDULUX;Small Cap;Non Finance
+TBOTEK;Small Cap;Non Finance
+ATLANTAELE;Small Cap;Non Finance
+INOXINDIA;Small Cap;Non Finance
+HAPPYFORGE;Small Cap;Non Finance
+GRWRHITECH;Small Cap;Non Finance
+KIRLOSBROS;Small Cap;Non Finance
+ALIVUS;Small Cap;Non Finance
+ENGINERSIN;Small Cap;Non Finance
+SPLPETRO;Small Cap;Non Finance
+HONASA;Small Cap;Non Finance
+JWL;Small Cap;Non Finance
+INDGN;Small Cap;Non Finance
+UTIAMC;Small Cap;Non Finance
+ELECON;Small Cap;Non Finance
+GRAVITA;Small Cap;Non Finance
+INDIAMART;Small Cap;Non Finance
+TEGA;Small Cap;Non Finance
+PARKHOSPS;Small Cap;Non Finance
+CONCORDBIO;Small Cap;Non Finance
+VIYASH;Small Cap;Non Finance
+IEX;Small Cap;Non Finance
+ZENSARTECH;Small Cap;Non Finance
+PRUDENT;Small Cap;Non Finance
+BLS;Small Cap;Non Finance
+BBTC;Small Cap;Non Finance
+KIRLPNU;Small Cap;Non Finance
+IIFLCAPS;Small Cap;Non Finance
+ESABINDIA;Small Cap;Non Finance
+MGL;Small Cap;Non Finance
+SANOFICONR;Small Cap;Non Finance
+RAILTEL;Small Cap;Non Finance
+ACE;Small Cap;Non Finance
+SKFINDUS;Small Cap;Non Finance
+WAAREERTL;Small Cap;Non Finance
+CYIENT;Small Cap;Non Finance
+MANYAVAR;Small Cap;Non Finance
+INTELLECT;Small Cap;Non Finance
+MARKSANS;Small Cap;Non Finance
+RITES;Small Cap;Non Finance
+PGHL;Small Cap;Non Finance
+VESUVIUS;Small Cap;Non Finance
+TARIL;Small Cap;Non Finance
+VOLTAMP;Small Cap;Non Finance
+BSOFT;Small Cap;Non Finance
+WABAG;Small Cap;Non Finance
+NESCO;Small Cap;Non Finance
+STARCEMENT;Small Cap;Non Finance
+TIMETECHNO;Small Cap;Non Finance
+ORKLAINDIA;Small Cap;Non Finance
+SHARDACROP;Small Cap;Non Finance
+CELLO;Small Cap;Non Finance
+MAHSEAMLES;Small Cap;Non Finance
+BLUEJET;Small Cap;Non Finance
+SKFINDIA;Small Cap;Non Finance
+TIPSMUSIC;Small Cap;Non Finance
+AKUMS;Small Cap;Non Finance
+KRBL;Small Cap;Non Finance
+IMFA;Small Cap;Non Finance
+POWERMECH;Small Cap;Non Finance
+CLEAN;Small Cap;Non Finance
+JSLL;Small Cap;Non Finance
+SONATSOFTW;Small Cap;Non Finance
+SAREGAMA;Small Cap;Non Finance
+GNFC;Small Cap;Non Finance
+PGIL;Small Cap;Non Finance
+GPPL;Small Cap;Non Finance
+GAEL;Small Cap;Non Finance
+JYOTHYLAB;Small Cap;Non Finance
+KIRLFER;Small Cap;Non Finance
+CERA;Small Cap;Non Finance
+SANOFI;Small Cap;Non Finance
+VIKRAMSOLR;Small Cap;Non Finance
+TCI;Small Cap;Non Finance
+PRICOLLTD;Small Cap;Non Finance
+TANLA;Small Cap;Non Finance
+LOTUSDEV;Small Cap;Non Finance
+TRANSRAILL;Small Cap;Non Finance
+LATENTVIEW;Small Cap;Non Finance
+JAIBALAJI;Small Cap;Non Finance
+DODLA;Small Cap;Non Finance
+AJAXENGG;Small Cap;Non Finance
+GALAXYSURF;Small Cap;Non Finance
+GOKULAGRO;Small Cap;Non Finance
+SHAKTIPUMP;Small Cap;Non Finance
+NEWGEN;Small Cap;Non Finance
+MOIL;Small Cap;Non Finance
+FDC;Small Cap;Non Finance
+FIEMIND;Small Cap;Non Finance
+GANESHHOU;Small Cap;Non Finance
+KOVAI;Small Cap;Non Finance
+PTC;Small Cap;Non Finance
+BALUFORGE;Small Cap;Non Finance
+AHLUCONT;Small Cap;Non Finance
+DHANUKA;Small Cap;Non Finance
+MASTEK;Small Cap;Non Finance
+GVPIL;Small Cap;Non Finance
+CMSINFO;Small Cap;Non Finance
+CRAMC;Small Cap;Non Finance
+LGBBROSLTD;Small Cap;Non Finance
+SHARDAMOTR;Small Cap;Non Finance
+WEBELSOLAR;Small Cap;Non Finance
+KSCL;Small Cap;Non Finance
+SURYAROSNI;Small Cap;Non Finance
+MANINFRA;Small Cap;Non Finance
+IBULLSLTD;Small Cap;Non Finance
+GULFOILLUB;Small Cap;Non Finance
+AURIONPRO;Small Cap;Non Finance
+JUSTDIAL;Small Cap;Non Finance
+THOMASCOOK;Small Cap;Non Finance
+VSTIND;Small Cap;Non Finance
+STYL;Small Cap;Non Finance
+SEAMECLTD;Small Cap;Non Finance
+OSWALPUMPS;Small Cap;Non Finance
+PACEDIGITK;Small Cap;Non Finance
+GHCL;Small Cap;Non Finance
+ORIANA;Small Cap;Non Finance
+CRIZAC;Small Cap;Non Finance
+AGI;Small Cap;Non Finance
+JKIL;Small Cap;Non Finance
+VAIBHAVGBL;Small Cap;Non Finance
+543971;Small Cap;Non Finance
+DBCORP;Small Cap;Non Finance
+EIEL;Small Cap;Non Finance
+KSL;Small Cap;Non Finance
+CIGNITITEC;Small Cap;Non Finance
+ASHOKA;Small Cap;Non Finance
+ROUTE;Small Cap;Non Finance
+RAMKY;Small Cap;Non Finance
+RSYSTEMS;Small Cap;Non Finance
+BALMLAWRIE;Small Cap;Non Finance
+QUESS;Small Cap;Non Finance
+SHAREINDIA;Small Cap;Non Finance
+MSTCLTD;Small Cap;Non Finance
+NIITMTS;Small Cap;Non Finance
+ORIENTCEM;Small Cap;Non Finance
+MAITHANALL;Small Cap;Non Finance
+SIYSIL;Small Cap;Non Finance
+RELINFRA;Small Cap;Non Finance
+PATELENG;Small Cap;Non Finance
+GKENERGY;Small Cap;Non Finance
+DDEVPLSTIK;Small Cap;Non Finance
+BCG;Small Cap;Non Finance
+KCP;Small Cap;Non Finance
+JINDRILL;Small Cap;Non Finance
+WAAREEINDO;Small Cap;Non Finance
+BLIL;Small Cap;Non Finance
+JPOLYINVST;Small Cap;Non Finance
+539594;Small Cap;Non Finance
+538897;Small Cap;Non Finance
+HDFCBANK;Large Cap;Banks
+ICICIBANK;Large Cap;Banks
+SBIN;Large Cap;Banks
+AXISBANK;Large Cap;Banks
+KOTAKBANK;Large Cap;Banks
+BANKBARODA;Large Cap;Banks
+UNIONBANK;Large Cap;Banks
+PNB;Large Cap;Banks
+CANBK;Large Cap;Banks
+INDIANB;Large Cap;Banks
+IDBI;Mid Cap;Banks
+AUBANK;Mid Cap;Banks
+FEDERALBNK;Mid Cap;Banks
+BANKINDIA;Mid Cap;Banks
+IOB;Mid Cap;Banks
+MAHABANK;Mid Cap;Banks
+CENTRALBK;Small Cap;Banks
+KARURVYSYA;Small Cap;Banks
+CUB;Small Cap;Banks
+J&KBANK;Small Cap;Banks
+TMB;Small Cap;Banks
+SOUTHBANK;Small Cap;Banks
+KTKBANK;Small Cap;Banks
+BAJFINANCE;Large Cap;NBFC
+BAJAJFINSV;Large Cap;NBFC
+SHRIRAMFIN;Large Cap;NBFC
+PFC;Large Cap;NBFC
+CHOLAFIN;Large Cap;NBFC
+MUTHOOTFIN;Large Cap;NBFC
+TATACAP;Large Cap;NBFC
+IRFC;Large Cap;NBFC
+BAJAJHLDNG;Large Cap;NBFC
+ABCAPITAL;Mid Cap;NBFC
+RECLTD;Mid Cap;NBFC
+LTF;Mid Cap;NBFC
+BAJAJHFL;Mid Cap;NBFC
+SBICARD;Mid Cap;NBFC
+HDBFS;Mid Cap;NBFC
+SUNDARMFIN;Mid Cap;NBFC
+M&MFIN;Mid Cap;NBFC
+AIIL;Mid Cap;NBFC
+HUDCO;Mid Cap;NBFC
+IREDA;Mid Cap;NBFC
+CHOLAHLDNG;Small Cap;NBFC
+LICHSGFIN;Small Cap;NBFC
+PNBHOUSING;Small Cap;NBFC
+TVSHLTD;Small Cap;NBFC
+AADHARHFC;Small Cap;NBFC
+IIFL;Small Cap;NBFC
+FIVESTAR;Small Cap;NBFC
+CANFINHOME;Small Cap;NBFC
+KAMAHOLD;Small Cap;NBFC

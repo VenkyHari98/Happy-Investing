@@ -1,0 +1,44 @@
+# F40 Watchlist — Format: TICKER;Cap Tier;Sector
+# Cap Tiers: Large Cap | Mid Cap | Small Cap
+# Allocation: Large Cap=5%, Mid Cap=3%, Small Cap=2%
+
+BAJAJ-AUTO;Large Cap;Automobile
+MARUTI;Large Cap;Automobile
+AXISBANK;Large Cap;Banking
+HDFCBANK;Large Cap;Banking
+ICICIBANK;Large Cap;Banking
+KOTAKBANK;Large Cap;Banking
+SBIN;Large Cap;Banking
+LT;Large Cap;Engineering
+RELIANCE;Large Cap;Oil & Gas
+TITAN;Large Cap;Jewellery & Watches
+HINDUNILVR;Large Cap;FMCG
+ITC;Large Cap;FMCG
+NESTLEIND;Large Cap;FMCG
+PIDILITIND;Large Cap;Chemicals
+HCLTECH;Large Cap;IT
+INFY;Large Cap;IT
+TCS;Large Cap;IT
+BAJAJFINSV;Large Cap;Financial Services
+BAJAJHLDNG;Large Cap;Financial Services
+BAJFINANCE;Large Cap;Financial Services
+HDFCAMC;Large Cap;Financial Services
+HDFCLIFE;Large Cap;Insurance
+ASIANPAINT;Large Cap;Paints
+HAVELLS;Large Cap;Consumer Electricals
+PAGEIND;Mid Cap;Apparel
+VOLTAS;Mid Cap;Consumer Electricals
+COLPAL;Large Cap;FMCG
+DABUR;Large Cap;FMCG
+MARICO;Large Cap;FMCG
+PGHH;Mid Cap;FMCG
+ICICIGI;Large Cap;Insurance
+NAM-INDIA;Mid Cap;Financial Services
+ICICIPRULI;Large Cap;Insurance
+BERGEPAINT;Large Cap;Paints
+ABBOTINDIA;Mid Cap;Pharma
+GLAXO;Mid Cap;Pharma
+BATAINDIA;Large Cap;Footwear
+GILLETTE;Mid Cap;FMCG
+PFIZER;Mid Cap;Pharma
+SANOFI;Mid Cap;Pharma

@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Happy Investing</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <!-- Sidebar -->
+  <nav id="sidebar">
+    <div class="sidebar-logo">
+      <span class="logo-icon">&#9650;</span>
+      <span class="logo-text">Happy Investing</span>
+    </div>
+
+    <ul class="nav-links">
+      <li>
+        <a href="#" class="nav-item" data-page="overview">
+          <span class="nav-icon">&#9783;</span>
+          <span>Portfolio Overview</span>
+        </a>
+      </li>
+      <li>
+        <a href="#" class="nav-item active" data-page="52w">
+          <span class="nav-icon">&#9660;&#9650;</span>
+          <span>52W Low &#8594; High</span>
+        </a>
+      </li>
+      <li>
+        <a href="#" class="nav-item disabled" data-page="envelope">
+          <span class="nav-icon">&#9643;</span>
+          <span>Envelope Strategy</span>
+          <span class="nav-badge">Soon</span>
+        </a>
+      </li>
+      <li>
+        <a href="#" class="nav-item disabled" data-page="abcd">
+          <span class="nav-icon">&#8595;</span>
+          <span>ABCD Averaging</span>
+          <span class="nav-badge">Soon</span>
+        </a>
+      </li>
+      <li>
+        <a href="#" class="nav-item disabled" data-page="combined">
+          <span class="nav-icon">&#10010;</span>
+          <span>Combined Scanner</span>
+          <span class="nav-badge">Soon</span>
+        </a>
+      </li>
+    </ul>
+
+    <div class="sidebar-footer">
+      <div id="last-updated" class="last-updated">—</div>
+    </div>
+  </nav>
+
+  <!-- Mobile header -->
+  <header id="mobile-header">
+    <button id="sidebar-toggle" aria-label="Open menu">&#9776;</button>
+    <span class="mobile-title">Happy Investing</span>
+  </header>
+
+  <!-- Main content -->
+  <div id="main-wrapper">
+
+    <!-- Portfolio Overview -->
+    <section class="page" id="page-overview">
+      <div class="page-header">
+        <h1>Portfolio Overview</h1>
+        <p class="page-sub">Cross-strategy capital deployment and target tracking</p>
+      </div>
+      <div class="coming-soon-card">
+        <div class="cs-icon">&#9783;</div>
+        <h2>Coming Soon</h2>
+        <p>Total capital deployed, mark-to-market across all open positions, and consolidated CAGR across every strategy.</p>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         52W LOW → HIGH  PAGE
+    ════════════════════════════════════════════════════════════════════ -->
+    <section class="page active" id="page-52w">
+
+      <!-- Page title -->
+      <div class="page-header">
+        <div>
+          <h1>52W Low &#8594; High</h1>
+          <p class="page-sub">Enter at 52-week low &nbsp;·&nbsp; Exit only at 52-week high &nbsp;·&nbsp; No stop-loss &nbsp;·&nbsp; No time limit</p>
+        </div>
+        <div class="header-chips">
+          <span class="chip chip-universe">F40 Universe</span>
+          <span class="chip chip-strategy">Value Trading</span>
+        </div>
+      </div>
+
+      <!-- Strategy-level summary metric cards (always visible) -->
+      <div class="metric-row" id="metric-row-52w"></div>
+
+      <!-- Sub-tab navigation -->
+      <div class="subtab-nav">
+        <button class="subtab-btn active" data-subtab="opportunities">Opportunity Scanner</button>
+        <button class="subtab-btn"        data-subtab="stock-analysis">Stock Analysis</button>
+      </div>
+
+      <!-- ── Sub-tab 1: Opportunity Scanner ───────────────────────────── -->
+      <div class="subtab-panel active" id="subtab-opportunities">
+
+        <div class="card">
+          <div class="card-header">
+            <h2>Buy Candidates <span class="card-badge" id="scanner-count">—</span></h2>
+            <p class="card-desc">Stocks within 2% of their rolling 52-week low. ABCD tranche levels and potential gain to the 52W high are pre-calculated.</p>
+          </div>
+          <div class="table-toolbar">
+            <input id="scanner-search" type="text" placeholder="Search ticker…" class="toolbar-input" />
+            <select id="scanner-sector" class="toolbar-select">
+              <option value="ALL">All sectors</option>
+            </select>
+            <select id="scanner-sort" class="toolbar-select">
+              <option value="distance">Closest to 52W Low</option>
+              <option value="gain">Highest potential gain</option>
+              <option value="ticker">Ticker A–Z</option>
+            </select>
+          </div>
+          <div class="table-scroll">
+            <table id="scanner-table">
+              <thead>
+                <tr>
+                  <th>Ticker</th>
+                  <th>Cap</th>
+                  <th>Sector</th>
+                  <th>Close</th>
+                  <th>52W Low</th>
+                  <th>Dist to Low</th>
+                  <th>Exit Target<br/>(52W High)</th>
+                  <th>Potential<br/>Gain %</th>
+                  <th>ABCD-A<br/>&#8722;10%</th>
+                  <th>ABCD-B<br/>&#8722;19%</th>
+                  <th>ABCD-C<br/>&#8722;27%</th>
+                  <th>ABCD-D<br/>&#8722;34%</th>
+                  <th>Signal</th>
+                </tr>
+              </thead>
+              <tbody id="scanner-body"></tbody>
+            </table>
+          </div>
+          <div class="empty-state" id="scanner-empty" style="display:none">No stocks within 2% of 52W low right now.</div>
+        </div>
+
+        <!-- All-stocks proximity table -->
+        <div class="card">
+          <div class="card-header">
+            <h2>All F40 Stocks — Distance to 52W Levels</h2>
+            <p class="card-desc">Full watchlist ranked by proximity to entry/exit levels.</p>
+          </div>
+          <div class="table-toolbar">
+            <input id="all-stocks-search" type="text" placeholder="Search ticker…" class="toolbar-input" />
+            <select id="all-stocks-sector" class="toolbar-select">
+              <option value="ALL">All sectors</option>
+            </select>
+            <select id="all-stocks-sort" class="toolbar-select">
+              <option value="dist-low">Sort: Closest to 52W Low</option>
+              <option value="dist-high">Sort: Closest to 52W High</option>
+              <option value="gain">Sort: Highest potential gain</option>
+              <option value="ticker">Sort: Ticker A–Z</option>
+            </select>
+          </div>
+          <div class="table-scroll">
+            <table id="all-stocks-table">
+              <thead>
+                <tr>
+                  <th>Ticker</th>
+                  <th>Cap</th>
+                  <th>Sector</th>
+                  <th>Close</th>
+                  <th>52W Low</th>
+                  <th>Dist to Low</th>
+                  <th>52W High</th>
+                  <th>Dist to High</th>
+                  <th>200 DMA</th>
+                  <th>Dist to DMA</th>
+                  <th>Signals</th>
+                </tr>
+              </thead>
+              <tbody id="all-stocks-body"></tbody>
+            </table>
+          </div>
+        </div>
+
+      </div><!-- /subtab-opportunities -->
+
+      <!-- ── Sub-tab 2: Stock Analysis ─────────────────────────────────── -->
+      <div class="subtab-panel" id="subtab-stock-analysis">
+
+        <div class="stock-analysis-layout">
+
+          <!-- Left panel: stock list -->
+          <div class="stock-list-panel">
+            <div class="slp-header">
+              <div class="slp-title">F40 Stocks</div>
+              <select id="slp-sector-filter" class="toolbar-select slp-sector">
+                <option value="ALL">All sectors</option>
+              </select>
+            </div>
+            <input id="slp-search" type="text" placeholder="Search…" class="slp-search" />
+            <ul id="stock-list" class="stock-list"></ul>
+          </div>
+
+          <!-- Right panel: stock detail -->
+          <div class="stock-detail-panel">
+
+            <!-- Per-stock metric cards -->
+            <div class="metric-row small" id="stock-metric-row"></div>
+
+            <!-- Open positions panel (amber) -->
+            <div class="open-pos-panel" id="open-pos-panel" style="display:none">
+              <div class="opo-title">Open Positions — Still Holding (Target Not Yet Hit)</div>
+              <div id="opo-entries"></div>
+            </div>
+
+            <!-- Chart -->
+            <div class="chart-wrap">
+              <div class="chart-legend-row">
+                <span class="legend-item"><span class="legend-line" style="background:#38bdf8"></span>Close</span>
+                <span class="legend-item"><span class="legend-line" style="background:#22c55e;border-style:dashed"></span>52W Low</span>
+                <span class="legend-item"><span class="legend-line" style="background:#ef4444;border-style:dashed"></span>52W High</span>
+                <span class="legend-item"><span class="legend-line" style="background:#f59e0b;border-style:dashed"></span>200 DMA</span>
+                <span class="legend-item"><span class="legend-circ buy-circ"></span>Entry</span>
+                <span class="legend-item"><span class="legend-circ sell-circ"></span>Exit</span>
+                <span class="legend-item"><span class="legend-circ open-circ"></span>Open</span>
+              </div>
+              <div class="chart-container" id="chart-container">
+                <svg id="main-chart" preserveAspectRatio="none"></svg>
+                <div id="chart-tooltip" class="chart-tooltip" style="display:none"></div>
+              </div>
+              <div class="range-buttons">
+                <button class="range-btn" data-range="1">1Y</button>
+                <button class="range-btn" data-range="3">3Y</button>
+                <button class="range-btn active" data-range="0">All</button>
+              </div>
+            </div>
+
+            <!-- Stock trade log -->
+            <div class="section-title" id="stock-trade-title">Select a stock from the list</div>
+            <div class="table-scroll">
+              <table id="stock-trades-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Entry Date</th>
+                    <th>Entry &#8377;</th>
+                    <th>Fixed Target &#8377;</th>
+                    <th>Exit Date</th>
+                    <th>Exit &#8377;</th>
+                    <th>Duration</th>
+                    <th>P/L %</th>
+                    <th>Net P/L &#8377;</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody id="stock-trades-body"></tbody>
+              </table>
+            </div>
+
+          </div><!-- /stock-detail-panel -->
+        </div><!-- /stock-analysis-layout -->
+
+      </div><!-- /subtab-stock-analysis -->
+
+    </section><!-- /page-52w -->
+
+    <!-- Placeholders -->
+    <section class="page" id="page-envelope">
+      <div class="page-header"><h1>Envelope Strategy</h1></div>
+      <div class="coming-soon-card"><div class="cs-icon">&#9643;</div><h2>Coming Soon</h2><p>Lower envelope entry · Upper envelope exit · Combined with 52W rules.</p></div>
+    </section>
+
+    <section class="page" id="page-abcd">
+      <div class="page-header"><h1>ABCD Averaging</h1></div>
+      <div class="coming-soon-card"><div class="cs-icon">&#8595;</div><h2>Coming Soon</h2><p>Tranche ladder: Initial + A/B/C/D at &#8722;10% steps · Each tranche exits independently.</p></div>
+    </section>
+
+    <section class="page" id="page-combined">
+      <div class="page-header"><h1>Combined Scanner</h1></div>
+      <div class="coming-soon-card"><div class="cs-icon">&#10010;</div><h2>Coming Soon</h2><p>Stocks where 2 or more strategies align simultaneously.</p></div>
+    </section>
+
+  </div><!-- /main-wrapper -->
+
+  <script src="app.js"></script>
+</body>
+</html>
