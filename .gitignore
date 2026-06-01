@@ -14,8 +14,9 @@ env/
 Source Data/Downloaded Data/
 web/data/
 
-# Raw session transcripts (large, not needed for code)
+# Raw session transcripts and large binary files (not needed for code)
 Live Classes/**/*.txt
+Live Classes/**/*.pdf
 
 # OS files
 .DS_Store
