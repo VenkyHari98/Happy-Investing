@@ -14,6 +14,12 @@ env/
 Source Data/Downloaded Data/
 web/data/
 
+# Daily OHLCV cache (auto-regenerated, can be large)
+Scripts/strategies/.cache/
+
+# Persistent OHLCV store (grows over time, not source code)
+Scripts/strategies/.store/
+
 # Raw session transcripts and large binary files (not needed for code)
 Live Classes/**/*.txt
 Live Classes/**/*.pdf

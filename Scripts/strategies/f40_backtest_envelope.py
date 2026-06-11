@@ -14,16 +14,20 @@ import csv
 import datetime
 import json
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
 from f40_backtest_common import (
     Trade,
     compute_portfolio_metrics,
+    fetch_all_fundamentals_parallel,
+    fetch_all_pe_series_parallel,
+    fetch_all_stocks_parallel,
     fetch_historical_data,
     parse_f40_watchlist,
 )
+import fundamental_config as cfg
 
 
 def simulate_envelope_long_strategy(
@@ -38,6 +42,9 @@ def simulate_envelope_long_strategy(
     entry_band_pct: float = 2.0,
     slippage_pct: float = 0.10,
     ma_type: str = "SMA",
+    pe_series: Optional["pd.Series"] = None,
+    pe_5yr_median: Optional["pd.Series"] = None,
+    fund_metrics: Optional[Dict] = None,
 ) -> List[Trade]:
     trades: List[Trade] = []
     df = df.copy()
@@ -45,72 +52,133 @@ def simulate_envelope_long_strategy(
     df["lower_envelope"] = df["ma"] * (1 - envelope_pct / 100.0)
     df["upper_envelope"] = df["ma"] * (1 + envelope_pct / 100.0)
 
-    position = None
-    position_entered = False
+    # Pre-build O(1) PE lookup dicts
+    pe_dict:     Dict[str, float] = {}
+    pe_med_dict: Dict[str, float] = {}
+    if pe_series is not None:
+        pe_dict = {ts.strftime("%Y-%m-%d"): float(v)
+                   for ts, v in pe_series.dropna().items()}
+    if pe_5yr_median is not None:
+        pe_med_dict = {ts.strftime("%Y-%m-%d"): float(v)
+                       for ts, v in pe_5yr_median.dropna().items()}
+
+    # ABCD multipliers: 10%, 19%, 27.1% below INITIAL entry; smaller allocation each tranche
+    _abcd_mult   = [0.90, 0.81, 0.729]
+    _abcd_labels = ['ABCD_A', 'ABCD_B', 'ABCD_C']
+    _abcd_alloc  = [0.50, 0.33, 0.25]  # fraction of INITIAL allocation_pct per tranche
+
+    # open_tranches: list of dicts with entry info per tranche in current cycle
+    open_tranches: list = []
+    abcd_opened: set = set()
+    initial_slippage_cost: float = 0.0
 
     for i in range(ma_period, len(df)):
         row = df.iloc[i]
         date = row.name.strftime("%Y-%m-%d")
-        high = row["high"]
-        low = row["low"]
-        close = row["close"]
-        vol = row["volume"]
-        ma = row["ma"]
+        high  = row["high"]
+        low   = row["low"]
+        vol   = row["volume"]
+        ma    = row["ma"]
         lower = row["lower_envelope"]
+        upper = row["upper_envelope"]
 
-        if pd.isna(ma) or pd.isna(lower):
+        if pd.isna(ma) or pd.isna(lower) or pd.isna(upper):
             continue
 
+        # ── EXIT: all open tranches exit at upper envelope ────────────────────
+        if open_tranches and high >= upper:
+            exit_price = upper
+            for t in open_tranches:
+                exit_value        = t["shares"] * exit_price
+                slip_exit         = exit_value * (slippage_pct / 100.0)
+                gross_pnl         = exit_value - t["entry_value"]
+                net_pnl           = gross_pnl - t["slippage_cost"] - slip_exit
+                pnl_pct           = (net_pnl / t["entry_value"]) * 100.0
+                trade_duration    = (
+                    datetime.datetime.strptime(date, "%Y-%m-%d")
+                    - datetime.datetime.strptime(t["entry_date"], "%Y-%m-%d")
+                ).days
+                trades.append(Trade(
+                    stock_ticker=ticker,
+                    cap_tier=cap_tier,
+                    sector=sector,
+                    entry_date=t["entry_date"],
+                    entry_price=t["entry_price"],
+                    exit_date=date,
+                    exit_price=exit_price,
+                    trade_duration_days=trade_duration,
+                    shares=t["shares"],
+                    allocation_pct=t["allocation_pct"],
+                    portfolio_value=portfolio_value,
+                    entry_value=t["entry_value"],
+                    exit_value=exit_value,
+                    gross_pnl=gross_pnl,
+                    pnl_pct=pnl_pct,
+                    slippage_loss=t["slippage_cost"] + slip_exit,
+                    net_pnl=net_pnl,
+                    exit_reason="ENV_EXIT",
+                ))
+            open_tranches.clear()
+            abcd_opened.clear()
+            initial_slippage_cost = 0.0
+
+        # ── INITIAL ENTRY: first touch of lower envelope ──────────────────────
         entry_threshold = lower * (1 + entry_band_pct / 100.0)
+        if not open_tranches and low <= entry_threshold and vol > 0:
+            date_str = row.name.strftime("%Y-%m-%d")
+            if pe_dict:
+                pe_val = pe_dict.get(date_str)
+                if pe_val is not None:
+                    if pe_val > cfg.PE_MAX:
+                        continue
+                    if cfg.PE_BELOW_5YR_MEDIAN and pe_med_dict:
+                        med_val = pe_med_dict.get(date_str)
+                        if med_val is not None and pe_val >= med_val:
+                            continue
+            if fund_metrics is not None:
+                p2_pass, _ = cfg.apply_fundamental_filter_phase2(fund_metrics, at_date=date_str)
+                if not p2_pass:
+                    continue
 
-        if not position_entered and low <= entry_threshold and vol > 0:
-            entry_price = lower
-            shares = (portfolio_value * allocation_pct) / entry_price
-            entry_value = shares * entry_price
-            slippage_cost = entry_value * (slippage_pct / 100.0)
-            position = {
-                "entry_date": date,
-                "entry_price": entry_price,
-                "shares": shares,
-                "entry_value": entry_value,
-            }
-            position_entered = True
+            entry_price  = lower
+            shares       = (portfolio_value * allocation_pct) / entry_price
+            entry_value  = shares * entry_price
+            slip_cost    = entry_value * (slippage_pct / 100.0)
+            initial_slippage_cost = slip_cost
+            open_tranches.append({
+                "tranche":        "INITIAL",
+                "entry_date":     date,
+                "entry_price":    entry_price,
+                "shares":         shares,
+                "entry_value":    entry_value,
+                "slippage_cost":  slip_cost,
+                "allocation_pct": allocation_pct,
+            })
 
-        if position_entered and high >= ma:
-            exit_price = ma
-            exit_value = position["shares"] * exit_price
-            slippage_cost_exit = exit_value * (slippage_pct / 100.0)
-            gross_pnl = exit_value - position["entry_value"]
-            net_pnl = gross_pnl - slippage_cost - slippage_cost_exit
-            pnl_pct = (net_pnl / position["entry_value"]) * 100.0
-            trade_duration = (
-                datetime.datetime.strptime(date, "%Y-%m-%d")
-                - datetime.datetime.strptime(position["entry_date"], "%Y-%m-%d")
-            ).days
-
-            trade = Trade(
-                stock_ticker=ticker,
-                cap_tier=cap_tier,
-                sector=sector,
-                entry_date=position["entry_date"],
-                entry_price=position["entry_price"],
-                exit_date=date,
-                exit_price=exit_price,
-                trade_duration_days=trade_duration,
-                shares=position["shares"],
-                allocation_pct=allocation_pct,
-                portfolio_value=portfolio_value,
-                entry_value=position["entry_value"],
-                exit_value=exit_value,
-                gross_pnl=gross_pnl,
-                pnl_pct=pnl_pct,
-                slippage_loss=slippage_cost + slippage_cost_exit,
-                net_pnl=net_pnl,
-                exit_reason="MA_EXIT",
-            )
-            trades.append(trade)
-            position = None
-            position_entered = False
+        # ── ABCD ENTRIES: average down when price falls from INITIAL ──────────
+        if open_tranches and vol > 0:
+            initial_entry = open_tranches[0]["entry_price"]
+            for j, (label, mult, alloc_frac) in enumerate(
+                    zip(_abcd_labels, _abcd_mult, _abcd_alloc)):
+                if label in abcd_opened:
+                    continue
+                level = round(initial_entry * mult, 2)
+                if low <= level:
+                    abcd_alloc_pct = allocation_pct * alloc_frac
+                    shares_abcd    = (portfolio_value * abcd_alloc_pct) / level
+                    entry_value_a  = shares_abcd * level
+                    slip_cost_a    = entry_value_a * (slippage_pct / 100.0)
+                    open_tranches.append({
+                        "tranche":        label,
+                        "entry_date":     date,
+                        "entry_price":    level,
+                        "shares":         shares_abcd,
+                        "entry_value":    entry_value_a,
+                        "slippage_cost":  slip_cost_a,
+                        "allocation_pct": abcd_alloc_pct,
+                    })
+                    abcd_opened.add(label)
+                    break  # one tranche per day
 
     return trades
 
@@ -288,13 +356,30 @@ def run_backtest(
     )
     strategy_name = "Envelope Long" if direction.lower() == "long" else "Envelope Short"
 
-    for ticker, (cap_tier, sector) in stocks.items():
-        print(f"Processing {ticker}...")
-        allocation_pct = allocations.get(cap_tier, 0.03)
-        df = fetch_historical_data(ticker, years=backtest_years, errors=errors)
-        if df is None or df.empty:
-            print(f"  → No data, skipped")
+    # Parallel OHLCV downloads (cache-aware)
+    print(f"Downloading {len(stocks)} stocks in parallel ({backtest_years}y each)...")
+    stock_dfs = fetch_all_stocks_parallel(stocks, years=backtest_years, errors=errors)
+
+    # Historical PE series + Phase 2 fundamentals — only needed for long entries
+    pe_series_map:   Dict[str, tuple] = {}
+    fund_metrics_map: Dict[str, Optional[Dict]] = {}
+    if direction.lower() == "long":
+        print(f"Fetching historical PE series for {len(stock_dfs)} stocks (weekly cached)...")
+        pe_series_map = fetch_all_pe_series_parallel(stock_dfs.keys())
+        pe_ok = sum(1 for v in pe_series_map.values() if v[0] is not None)
+        print(f"  PE series available for {pe_ok}/{len(stock_dfs)} stocks")
+
+        print(f"Fetching Phase 2 fundamental data for {len(stock_dfs)} stocks (weekly cached)...")
+        fund_metrics_map = fetch_all_fundamentals_parallel(stock_dfs.keys())
+        fund_ok = sum(1 for v in fund_metrics_map.values() if v is not None)
+        print(f"  Phase 2 data available for {fund_ok}/{len(stock_dfs)} stocks")
+
+    for ticker, df in stock_dfs.items():
+        if df.empty:
             continue
+        cap_tier, sector = stocks[ticker]
+        allocation_pct = allocations.get(cap_tier, 0.03)
+        pe_pair = pe_series_map.get(ticker, (None, None))
 
         trades = simulate_func(
             df,
@@ -308,8 +393,11 @@ def run_backtest(
             entry_band_pct=entry_band_pct,
             slippage_pct=slippage_pct,
             ma_type=ma_type,
+            **({"pe_series": pe_pair[0], "pe_5yr_median": pe_pair[1],
+                "fund_metrics": fund_metrics_map.get(ticker)}
+               if direction.lower() == "long" else {}),
         )
-        print(f"  → {len(trades)} trades generated")
+        print(f"  {ticker}: {len(trades)} trades")
         all_trades.extend(trades)
 
     metrics = compute_portfolio_metrics(all_trades)

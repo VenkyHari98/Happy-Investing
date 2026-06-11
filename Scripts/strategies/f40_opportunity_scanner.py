@@ -24,7 +24,17 @@ from typing import Any, Dict, List
 
 import pandas as pd
 
-from f40_backtest_common import fetch_historical_data, parse_f40_watchlist
+from f40_backtest_common import (
+    fetch_all_fundamentals_parallel,
+    fetch_all_pe_parallel,
+    fetch_all_stocks_parallel,
+    fetch_historical_data,
+    fetch_historical_pe_avgs,
+    fetch_stock_pe,
+    parse_f40_watchlist,
+    parse_watchlists,
+)
+import fundamental_config as cfg
 
 
 DEFAULT_ENVELOPE_PCT = 14.0
@@ -83,11 +93,27 @@ def compute_current_setup(
         result["signals"].append("ENVELOPE_LONG_CANDIDATE")
     if upper_env and close >= upper_env * (1 - proximity_pct / 100.0):
         result["signals"].append("ENVELOPE_SHORT_CANDIDATE")
-    if w52_low and close <= w52_low * 0.90:
-        result["signals"].append("ABCD_AVERAGE_ZONE")
 
     if not result["signals"]:
         result["signals"].append("NO_IMMEDIATE_SIGNAL")
+
+    # 52W proximity status (mirrors S200 status lifecycle)
+    dist = result["distance_to_52w_low_pct"] or 0.0
+    # Detect declining 52W low: compare current low to ~90 trading days ago
+    w52_low_90d = float(df["52w_low"].iloc[-90]) if len(df) >= 90 else None
+    declining = (
+        w52_low_90d is not None
+        and w52_low_90d > 0
+        and (w52_low_90d - float(last["52w_low"])) / w52_low_90d >= 0.05
+    ) if w52_low else False
+    if dist <= proximity_pct:
+        result["status_52w"] = "BELOW_BUY" if declining else "IN_ZONE"
+    elif dist <= 8.0:
+        result["status_52w"] = "APPROACHING"
+    elif dist <= 20.0:
+        result["status_52w"] = "WATCHING_NEAR"
+    else:
+        result["status_52w"] = "WATCHING"
 
     result["summary"] = {
         "days_of_data": len(df),
@@ -137,10 +163,18 @@ def build_report(
         f.write("-" * 80 + "\n")
         for signal, count in summary["signal_counts"].items():
             f.write(f"{signal}: {count}\n")
+        fc = summary.get("fundamental_counts", {})
+        if fc:
+            f.write("\nFUNDAMENTAL FILTER SUMMARY\n")
+            f.write("-" * 80 + "\n")
+            f.write(f"Below 200 DMA         : {fc.get('below_200dma', 0)} / {summary['stocks_scanned']}\n")
+            f.write(f"PE filter pass        : {fc.get('pe_pass', 0)} / {summary['stocks_scanned']}\n")
+            f.write(f"S3+S5 BS/BQ pass      : {fc.get('s3_s5_pass', 0)} / {summary['stocks_scanned']}\n")
+            f.write(f"All fundamentals pass : {fc.get('all_pass', 0)} / {summary['stocks_scanned']}\n")
 
 
 def run_scanner(
-    watchlist_file: Path,
+    watchlist_files,
     output_root: Path,
     years: int = 2,
     envelope_pct: float = DEFAULT_ENVELOPE_PCT,
@@ -150,17 +184,29 @@ def run_scanner(
 ) -> None:
     output_date = datetime.date.today().strftime("%d%m%Y")
     output_folder = output_root / output_date
-    stocks = parse_f40_watchlist(watchlist_file)
+    stocks = parse_watchlists(watchlist_files)
 
     rows: List[Dict[str, Any]] = []
     signal_counts: Dict[str, int] = {}
     errors: List[str] = []
 
-    for ticker, (cap_tier, sector) in stocks.items():
+    # Parallel OHLCV downloads (cache-aware)
+    print(f"Downloading data for {len(stocks)} stocks in parallel...")
+    stock_dfs = fetch_all_stocks_parallel(stocks, years=years, errors=errors)
+
+    # Parallel PE fetches for stocks that returned data
+    print(f"Fetching PE data for {len(stock_dfs)} stocks in parallel...")
+    pe_map = fetch_all_pe_parallel(stock_dfs.keys())
+
+    # Phase 2: balance sheet + business quality fundamentals (weekly cached)
+    print(f"Fetching Phase 2 fundamental data for {len(stock_dfs)} stocks...")
+    fund_map = fetch_all_fundamentals_parallel(stock_dfs.keys(), max_workers=4)
+
+    for ticker, df in stock_dfs.items():
+        if df.empty:
+            continue
+        cap_tier, sector = stocks[ticker]
         try:
-            df = fetch_historical_data(ticker, years=years, errors=errors)
-            if df is None or df.empty:
-                continue
             setup = compute_current_setup(
                 df,
                 envelope_pct=envelope_pct,
@@ -168,29 +214,97 @@ def run_scanner(
                 ma_period=ma_period,
                 window=window,
             )
+            pe_current, pe_3yr_avg, pe_5yr_avg = pe_map.get(ticker, (None, None, None))
             row = {
                 "ticker": ticker,
                 "cap_tier": cap_tier,
                 "sector": sector,
+                "pe_current": pe_current,
+                "pe_3yr_avg": pe_3yr_avg,
+                "pe_5yr_avg": pe_5yr_avg,
                 **setup,
             }
+
+            # ── Fundamental filter assessment (available data: price + PE) ──────────
+            close_px = setup["close"]
+            ma_val   = setup.get("ma")
+            w52h     = setup.get("52w_high")
+
+            below_200dma = (ma_val is not None and not pd.isna(ma_val) and close_px < ma_val)
+
+            fall_from_52w_high = (
+                round((w52h - close_px) / w52h * 100.0, 2)
+                if (w52h and w52h > 0 and close_px < w52h) else 0.0
+            )
+
+            pe_fails = []
+            if pe_current is not None and pe_current > cfg.PE_MAX:
+                pe_fails.append(f"PE {pe_current:.1f} > max {cfg.PE_MAX:.0f}")
+            if (cfg.PE_BELOW_5YR_MEDIAN
+                    and pe_5yr_avg is not None
+                    and pe_current is not None
+                    and pe_current >= pe_5yr_avg):
+                pe_fails.append(f"PE {pe_current:.1f} >= 5yr avg {pe_5yr_avg:.1f}")
+            pe_pass = len(pe_fails) == 0
+
+            row["fund_below_200dma"]          = below_200dma
+            row["fund_fall_from_52w_high_pct"] = fall_from_52w_high
+            row["fund_pe_pass"]                = pe_pass
+            row["fund_pe_fail_reasons"]        = pe_fails
+
+            # Phase 2: balance sheet + business quality (current snapshot)
+            fund = fund_map.get(ticker)
+            p2_pass, p2_fails = cfg.apply_fundamental_filter_phase2(fund)
+            row["fund_s3_s5_pass"]         = p2_pass
+            row["fund_s3_s5_fail_reasons"] = p2_fails
+            row["fund_roce"]               = fund.get("roce_current")      if fund else None
+            row["fund_roe"]                = fund.get("roe_current")       if fund else None
+            row["fund_net_de"]             = fund.get("net_de_current")    if fund else None
+            row["fund_ttm_np_cr"]          = fund.get("ttm_np_cr")         if fund else None
+            row["fund_sales_vs_ath_pct"]   = fund.get("sales_vs_ath_pct") if fund else None
+            row["fund_profit_vs_ath_pct"]  = fund.get("profit_vs_ath_pct") if fund else None
+            row["fund_opm_3yr"]            = fund.get("opm_3yr")           if fund else None
+            row["fund_pledged_pct"]        = fund.get("pledged_pct")       if fund else None
+
+            row["fund_all_pass"] = (
+                below_200dma
+                and pe_pass
+                and p2_pass
+            )
+
             rows.append(row)
             for signal in setup["signals"]:
                 signal_counts[signal] = signal_counts.get(signal, 0) + 1
         except Exception as ex:
             errors.append(f"{ticker}: {ex}")
 
-    candidate_count = sum(1 for row in rows if any(s != "NO_IMMEDIATE_SIGNAL" for s in row["signals"]))
+    candidate_count   = sum(1 for row in rows if any(s != "NO_IMMEDIATE_SIGNAL" for s in row["signals"]))
+    fund_pass_count   = sum(1 for row in rows if row.get("fund_all_pass"))
+    fund_200dma_count = sum(1 for row in rows if row.get("fund_below_200dma"))
+    fund_pe_count     = sum(1 for row in rows if row.get("fund_pe_pass"))
+    fund_s3s5_count   = sum(1 for row in rows if row.get("fund_s3_s5_pass"))
     summary = {
-        "run_date": datetime.date.today().isoformat(),
-        "watchlist_file": str(watchlist_file),
-        "stocks_scanned": len(rows),
-        "candidate_count": candidate_count,
-        "window_days": window,
-        "ma_period": ma_period,
-        "envelope_pct": envelope_pct,
-        "proximity_pct": proximity_pct,
-        "signal_counts": signal_counts,
+        "run_date":           datetime.date.today().isoformat(),
+        "watchlist_files":    str(watchlist_files),
+        "stocks_scanned":     len(rows),
+        "candidate_count":    candidate_count,
+        "window_days":        window,
+        "ma_period":          ma_period,
+        "envelope_pct":       envelope_pct,
+        "proximity_pct":      proximity_pct,
+        "signal_counts":      signal_counts,
+        "fundamental_config": {
+            "below_200dma_enforced": cfg.REQUIRE_BELOW_200DMA,
+            "pe_max":                cfg.PE_MAX,
+            "pe_below_5yr_median":   cfg.PE_BELOW_5YR_MEDIAN,
+            "phase2_enabled":        True,
+        },
+        "fundamental_counts": {
+            "all_pass":     fund_pass_count,
+            "below_200dma": fund_200dma_count,
+            "pe_pass":      fund_pe_count,
+            "s3_s5_pass":   fund_s3s5_count,
+        },
         "errors": errors,
     }
 
@@ -203,7 +317,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--watchlist",
         default="Source Data/Watchlist/F40.txt",
-        help="Path to F40 watchlist file",
+        help="Comma-separated watchlist file paths (default: F40 only)",
     )
     parser.add_argument(
         "--output-root",
@@ -247,7 +361,7 @@ def main() -> None:
     parser = build_arg_parser()
     args = parser.parse_args()
     run_scanner(
-        Path(args.watchlist).resolve(),
+        [Path(p.strip()).resolve() for p in args.watchlist.split(",")],
         Path(args.output_root).resolve(),
         years=args.years,
         envelope_pct=args.envelope_pct,

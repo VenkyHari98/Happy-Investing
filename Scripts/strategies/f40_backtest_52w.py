@@ -27,9 +27,17 @@ from f40_backtest_common import (
     Trade,
     compute_portfolio_metrics,
     compute_rolling_52w,
+    fetch_all_fundamentals_parallel,
+    fetch_all_pe_parallel,
+    fetch_all_pe_series_parallel,
+    fetch_all_stocks_parallel,
     fetch_historical_data,
+    fetch_historical_pe_avgs,
+    fetch_stock_pe,
     parse_f40_watchlist,
+    parse_watchlists,
 )
+import fundamental_config as cfg
 
 
 def simulate_52w_strategy(
@@ -44,11 +52,18 @@ def simulate_52w_strategy(
     ma_period: int = 200,
     max_concurrent: int = 4,
     new_entry_threshold_pct: float = 8.0,
-) -> Tuple[List[Trade], List[Dict[str, Any]]]:
+    pe_series: Optional[pd.Series] = None,
+    pe_5yr_median: Optional[pd.Series] = None,
+    fund_metrics: Optional[Dict] = None,
+) -> Tuple[List[Trade], List[Dict[str, Any]], Dict[str, int]]:
     """
     Simulate 52W Low->High strategy with fixed exit targets and multi-entry.
 
-    Returns (completed_trades, open_positions_list).
+    Returns (completed_trades, open_positions_list, filter_stats).
+    filter_stats counts entries blocked by each fundamental gate.
+
+    pe_series / pe_5yr_median: historical daily PE series for this stock.
+    When None, the PE gate is skipped (stock has no yfinance EPS data).
     """
     trades: List[Trade] = []
     df = df.copy()
@@ -57,12 +72,30 @@ def simulate_52w_strategy(
 
     # Each element: {entry_date, entry_price, exit_target (FIXED), shares, entry_value, slippage_buy}
     open_positions: List[Dict[str, Any]] = []
+    filter_stats = {
+        "blocked_200dma": 0,
+        "blocked_pe": 0,
+        "blocked_pe_5yr_median": 0,
+        "blocked_phase2": 0,
+        "entries_taken": 0,
+    }
+
+    # Pre-build O(1) date-string lookup dicts for PE data (avoid per-row Series indexing)
+    pe_dict:     Dict[str, float] = {}
+    pe_med_dict: Dict[str, float] = {}
+    if pe_series is not None:
+        pe_dict = {ts.strftime("%Y-%m-%d"): float(v)
+                   for ts, v in pe_series.dropna().items()}
+    if pe_5yr_median is not None:
+        pe_med_dict = {ts.strftime("%Y-%m-%d"): float(v)
+                       for ts, v in pe_5yr_median.dropna().items()}
 
     for i in range(252, len(df)):
         date = df.index[i].strftime("%Y-%m-%d")
         high = float(df["high"].iloc[i])
         low  = float(df["low"].iloc[i])
         vol  = float(df["volume"].iloc[i])
+        ma200 = float(df["ma200"].iloc[i])
 
         w52_low  = float(df["52w_low"].iloc[i])
         w52_high = float(df["52w_high"].iloc[i])
@@ -110,12 +143,39 @@ def simulate_52w_strategy(
         if low <= entry_band_high and vol > 0 and len(open_positions) < max_concurrent:
             entry_price = max(w52_low, low)
 
+            # Fundamental gate 1: price must be below 200 DMA
+            if cfg.REQUIRE_BELOW_200DMA and (np.isnan(ma200) or entry_price >= ma200):
+                filter_stats["blocked_200dma"] += 1
+                continue
+
+            # Fundamental gate 2: PE at entry must be < PE_MAX (when data available)
+            if pe_dict:
+                pe_val = pe_dict.get(date)
+                if pe_val is not None:
+                    if pe_val > cfg.PE_MAX:
+                        filter_stats["blocked_pe"] += 1
+                        continue
+                    # Gate 3: PE at entry must be below the rolling 5-year median PE
+                    if cfg.PE_BELOW_5YR_MEDIAN and pe_med_dict:
+                        med_val = pe_med_dict.get(date)
+                        if med_val is not None and pe_val >= med_val:
+                            filter_stats["blocked_pe_5yr_median"] += 1
+                            continue
+
+            # Fundamental gate 4: Phase 2 balance sheet + business quality
+            if fund_metrics is not None:
+                p2_pass, _ = cfg.apply_fundamental_filter_phase2(fund_metrics, at_date=date)
+                if not p2_pass:
+                    filter_stats["blocked_phase2"] += 1
+                    continue
+
             # Only enter if no positions open, OR this low is meaningfully lower
             cheapest = min((p["entry_price"] for p in open_positions), default=None)
             threshold = new_entry_threshold_pct / 100.0
             is_new_low = cheapest is None or entry_price < cheapest * (1 - threshold)
 
             if is_new_low:
+                filter_stats["entries_taken"] += 1
                 shares = (portfolio_value * allocation_pct) / entry_price
                 entry_value = shares * entry_price
                 open_positions.append({
@@ -150,7 +210,7 @@ def simulate_52w_strategy(
             "pct_to_target":    round(pct_to_target, 2),
         })
 
-    return trades, open_details
+    return trades, open_details, filter_stats
 
 
 def build_price_series(df: pd.DataFrame, ma_period: int = 200) -> List[Dict[str, Any]]:
@@ -174,7 +234,7 @@ def build_price_series(df: pd.DataFrame, ma_period: int = 200) -> List[Dict[str,
 
 
 def run_backtest(
-    watchlist_file: Path,
+    watchlist_files,
     output_folder: Path,
     backtest_years: int = 10,
     portfolio_value: float = 100000.0,
@@ -185,25 +245,48 @@ def run_backtest(
 ) -> None:
     output_folder.mkdir(parents=True, exist_ok=True)
 
-    stocks = parse_f40_watchlist(watchlist_file)
-    print(f"Parsed {len(stocks)} stocks from F40 watchlist")
+    stocks = parse_watchlists(watchlist_files)
+    print(f"Parsed {len(stocks)} stocks from watchlist(s)")
 
     allocations = {"Large Cap": 0.05, "Mid Cap": 0.03, "Small Cap": 0.02}
 
     all_trades: List[Trade] = []
     stock_data_map: Dict[str, Dict[str, Any]] = {}
     errors: List[str] = []
+    total_filter_stats = {
+        "blocked_200dma": 0,
+        "blocked_pe": 0, "blocked_pe_5yr_median": 0,
+        "blocked_phase2": 0, "entries_taken": 0,
+    }
 
-    for ticker, (cap_tier, sector) in stocks.items():
-        print(f"Processing {ticker} ({cap_tier} | {sector})...")
+    # Parallel OHLCV downloads (cache-aware)
+    print(f"Downloading {len(stocks)} stocks in parallel ({backtest_years}y each)...")
+    stock_dfs = fetch_all_stocks_parallel(stocks, years=backtest_years, errors=errors)
+
+    # Parallel PE fetches (current PE for display)
+    print(f"Fetching current PE data for {len(stock_dfs)} stocks in parallel...")
+    pe_map = fetch_all_pe_parallel(stock_dfs.keys())
+
+    # Parallel historical PE series (for backtest PE gates — weekly cached)
+    print(f"Fetching historical PE series for {len(stock_dfs)} stocks (weekly cached)...")
+    pe_series_map = fetch_all_pe_series_parallel(stock_dfs.keys())
+    pe_series_ok = sum(1 for v in pe_series_map.values() if v[0] is not None)
+    print(f"  PE series available for {pe_series_ok}/{len(stock_dfs)} stocks")
+
+    # Phase 2: balance sheet + business quality data (weekly cached)
+    print(f"Fetching Phase 2 fundamental data for {len(stock_dfs)} stocks (weekly cached)...")
+    fund_metrics_map = fetch_all_fundamentals_parallel(stock_dfs.keys())
+    fund_ok = sum(1 for v in fund_metrics_map.values() if v is not None)
+    print(f"  Phase 2 data available for {fund_ok}/{len(stock_dfs)} stocks")
+
+    for ticker, df in stock_dfs.items():
+        if df.empty:
+            continue
+        cap_tier, sector = stocks[ticker]
         allocation = allocations.get(cap_tier, 0.03)
 
-        df = fetch_historical_data(ticker, years=backtest_years, errors=errors)
-        if df is None or df.empty:
-            print(f"  -> No data, skipped")
-            continue
-
-        trades, open_positions = simulate_52w_strategy(
+        pe_pair = pe_series_map.get(ticker, (None, None))
+        trades, open_positions, fstats = simulate_52w_strategy(
             df, ticker, cap_tier, sector,
             portfolio_value=portfolio_value,
             allocation_pct=allocation,
@@ -211,12 +294,24 @@ def run_backtest(
             ma_period=ma_period,
             max_concurrent=max_concurrent,
             new_entry_threshold_pct=new_entry_threshold_pct,
+            pe_series=pe_pair[0],
+            pe_5yr_median=pe_pair[1],
+            fund_metrics=fund_metrics_map.get(ticker),
         )
-        print(f"  -> {len(trades)} completed, {len(open_positions)} open")
+        for k in total_filter_stats:
+            total_filter_stats[k] += fstats[k]
+        print(
+            f"  {ticker}: {len(trades)} completed, {len(open_positions)} open"
+            f" | blocked: {fstats['blocked_200dma']} 200DMA,"
+            f" {fstats['blocked_pe']} PE>{cfg.PE_MAX:.0f},"
+            f" {fstats['blocked_pe_5yr_median']} PE>5yr-med,"
+            f" {fstats['blocked_phase2']} phase2"
+        )
         all_trades.extend(trades)
 
         price_series = build_price_series(df, ma_period=ma_period)
         stock_pnl = sum(t.net_pnl for t in trades)
+        pe_current, pe_3yr_avg, pe_5yr_avg = pe_map.get(ticker, (None, None, None))
 
         stock_data_map[ticker] = {
             "ticker":         ticker,
@@ -226,6 +321,9 @@ def run_backtest(
             "latest_date":    df.index[-1].strftime("%Y-%m-%d"),
             "trades_count":   len(trades),
             "total_pnl":      round(stock_pnl, 2),
+            "pe_current":     pe_current,
+            "pe_3yr_avg":     pe_3yr_avg,
+            "pe_5yr_avg":     pe_5yr_avg,
             "open_positions": open_positions,
             "prices":         price_series,
             "trades":         [t.to_dict() for t in trades],
@@ -245,6 +343,18 @@ def run_backtest(
         "open_positions":   total_open,
         "stocks_tested":    len(stocks),
         "metrics":          metrics,
+        "fundamental_gates": {
+            "below_200dma_enforced":  cfg.REQUIRE_BELOW_200DMA,
+            "pe_max":                 cfg.PE_MAX,
+            "pe_below_5yr_median":    cfg.PE_BELOW_5YR_MEDIAN,
+            "pe_series_available":    pe_series_ok,
+            "phase2_available":       fund_ok,
+            "blocked_200dma":         total_filter_stats["blocked_200dma"],
+            "blocked_pe":             total_filter_stats["blocked_pe"],
+            "blocked_pe_5yr_median":  total_filter_stats["blocked_pe_5yr_median"],
+            "blocked_phase2":         total_filter_stats["blocked_phase2"],
+            "entries_taken":          total_filter_stats["entries_taken"],
+        },
     }
 
     _write_json(output_folder / "backtest_summary.json", summary)
@@ -307,6 +417,18 @@ def _write_report(path: Path, summary: Dict, metrics: Dict, trades: List[Trade],
         f.write(f"Avg duration     : {metrics['avg_trade_duration_days']:.0f} days\n")
         f.write(f"CAGR             : {metrics['cagr']:.2f}%\n")
         f.write(f"Sharpe ratio     : {metrics['sharpe']:.2f}\n")
+        gates = summary.get("fundamental_gates", {})
+        if gates:
+            f.write("\nFUNDAMENTAL GATES\n" + "-" * 60 + "\n")
+            f.write(f"Below 200 DMA enforced   : {gates['below_200dma_enforced']}\n")
+            f.write(f"PE max                   : {gates['pe_max']}\n")
+            f.write(f"PE below 5yr median      : {gates['pe_below_5yr_median']}\n")
+            f.write(f"PE series available for  : {gates.get('pe_series_available', '?')} stocks\n")
+            f.write(f"Blocked (200 DMA)        : {gates['blocked_200dma']} entry attempts\n")
+            f.write(f"Blocked (PE > max)       : {gates['blocked_pe']} entry attempts\n")
+            f.write(f"Blocked (PE > 5yr med)   : {gates['blocked_pe_5yr_median']} entry attempts\n")
+            f.write(f"Blocked (Phase 2 BS/BQ)  : {gates.get('blocked_phase2', 0)} entry attempts\n")
+            f.write(f"Entries taken            : {gates['entries_taken']}\n")
         if errors:
             f.write("\nERRORS\n" + "-" * 60 + "\n")
             for e in errors[:20]:
@@ -329,7 +451,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
 def main():
     args = build_arg_parser().parse_args()
     run_backtest(
-        Path(args.watchlist).resolve(),
+        [Path(p.strip()).resolve() for p in args.watchlist.split(",")],
         Path(args.output).resolve(),
         backtest_years=args.years,
         portfolio_value=args.portfolio_value,
