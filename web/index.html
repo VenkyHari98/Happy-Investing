@@ -4,47 +4,69 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Happy Investing</title>
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.11.0/dist/tabler-icons.min.css">
+  <link rel="stylesheet" href="styles.css" id="v1-sheet" />
+  <link rel="stylesheet" href="styles_v2.css" id="v2-sheet" disabled />
 </head>
 <body>
+
+  <!-- Pipeline status banner: shown by app.js when background data refresh is running -->
+  <div id="pipeline-status-banner" style="display:none; position:sticky; top:0; z-index:999;
+       background:#1a3a2a; color:#7fff9a; padding:8px 20px; font-size:0.82rem;
+       align-items:center; gap:12px; border-bottom:1px solid #2a5a3a;">
+    <span id="pipeline-status-text"></span>
+    <button id="pipeline-reload-btn" onclick="location.reload()"
+            style="display:none; margin-left:auto; background:#2a5a3a; border:1px solid #4a8a5a;
+                   color:#7fff9a; padding:4px 12px; border-radius:4px; cursor:pointer;">
+      New data ready — reload
+    </button>
+  </div>
 
   <!-- Sidebar -->
   <nav id="sidebar">
     <div class="sidebar-logo">
-      <span class="logo-icon">&#9650;</span>
+      <i class="ti ti-trending-up logo-icon"></i>
       <span class="logo-text">Happy Investing</span>
     </div>
 
     <ul class="nav-links">
       <li>
         <a href="#" class="nav-item" data-page="overview">
-          <span class="nav-icon">&#9783;</span>
+          <i class="ti ti-layout-grid nav-icon"></i>
           <span>Portfolio Overview</span>
         </a>
       </li>
       <li>
         <a href="#" class="nav-item active" data-page="52w">
-          <span class="nav-icon">&#9660;&#9650;</span>
-          <span>52W Low &#8594; High</span>
+          <i class="ti ti-arrows-down-up nav-icon"></i>
+          <span>52W Low &rarr; High</span>
         </a>
       </li>
       <li>
-        <a href="#" class="nav-item disabled" data-page="envelope">
-          <span class="nav-icon">&#9643;</span>
+        <a href="#" class="nav-item" data-page="s200rally">
+          <i class="ti ti-chart-candle nav-icon"></i>
+          <span>S200 - 20% Rally</span>
+        </a>
+      </li>
+      <li>
+        <a href="#" class="nav-item" data-page="envelope">
+          <i class="ti ti-wave-sine nav-icon"></i>
           <span>Envelope Strategy</span>
-          <span class="nav-badge">Soon</span>
         </a>
       </li>
       <li>
         <a href="#" class="nav-item disabled" data-page="abcd">
-          <span class="nav-icon">&#8595;</span>
+          <i class="ti ti-stairs nav-icon"></i>
           <span>ABCD Averaging</span>
           <span class="nav-badge">Soon</span>
         </a>
       </li>
       <li>
         <a href="#" class="nav-item disabled" data-page="combined">
-          <span class="nav-icon">&#10010;</span>
+          <i class="ti ti-filters nav-icon"></i>
           <span>Combined Scanner</span>
           <span class="nav-badge">Soon</span>
         </a>
@@ -52,13 +74,18 @@
     </ul>
 
     <div class="sidebar-footer">
+      <div class="hz-toggle-label">Backtest horizon</div>
+      <div id="horizon-toggle">
+        <button class="hz-btn" data-hz="5y">5Y</button>
+        <button class="hz-btn active" data-hz="10y">10Y</button>
+      </div>
       <div id="last-updated" class="last-updated">—</div>
     </div>
   </nav>
 
   <!-- Mobile header -->
   <header id="mobile-header">
-    <button id="sidebar-toggle" aria-label="Open menu">&#9776;</button>
+    <button id="sidebar-toggle" aria-label="Open menu"><i class="ti ti-menu-2"></i></button>
     <span class="mobile-title">Happy Investing</span>
   </header>
 
@@ -72,7 +99,7 @@
         <p class="page-sub">Cross-strategy capital deployment and target tracking</p>
       </div>
       <div class="coming-soon-card">
-        <div class="cs-icon">&#9783;</div>
+        <div class="cs-icon"><i class="ti ti-layout-grid"></i></div>
         <h2>Coming Soon</h2>
         <p>Total capital deployed, mark-to-market across all open positions, and consolidated CAGR across every strategy.</p>
       </div>
@@ -90,7 +117,7 @@
           <p class="page-sub">Enter at 52-week low &nbsp;·&nbsp; Exit only at 52-week high &nbsp;·&nbsp; No stop-loss &nbsp;·&nbsp; No time limit</p>
         </div>
         <div class="header-chips">
-          <span class="chip chip-universe">F40 Universe</span>
+          <span class="chip chip-universe">F40</span>
           <span class="chip chip-strategy">Value Trading</span>
         </div>
       </div>
@@ -102,25 +129,42 @@
       <div class="subtab-nav">
         <button class="subtab-btn active" data-subtab="opportunities">Opportunity Scanner</button>
         <button class="subtab-btn"        data-subtab="stock-analysis">Stock Analysis</button>
+        <button class="subtab-btn"        data-subtab="portfolio-backtest">Portfolio Backtest</button>
       </div>
 
       <!-- ── Sub-tab 1: Opportunity Scanner ───────────────────────────── -->
       <div class="subtab-panel active" id="subtab-opportunities">
 
+        <!-- Status filter pills — F40 only: 3 zones based on proximity to 52W low -->
+        <div class="status-filter-row" id="w52-status-filter">
+          <button class="w52-sfb active"         data-status="ALL">All</button>
+          <button class="w52-sfb sfb-zone"        data-status="IN_ZONE">At 52W Low <span class="sfb-count" id="w52-sfb-zone">0</span></button>
+          <button class="w52-sfb sfb-approaching" data-status="APPROACHING">Approaching <span class="sfb-count" id="w52-sfb-app">0</span></button>
+          <button class="w52-sfb sfb-near"        data-status="NEAR">Near DMA <span class="sfb-count" id="w52-sfb-near">0</span></button>
+        </div>
+
         <div class="card">
           <div class="card-header">
-            <h2>Buy Candidates <span class="card-badge" id="scanner-count">—</span></h2>
-            <p class="card-desc">Stocks within 2% of their rolling 52-week low. ABCD tranche levels and potential gain to the 52W high are pre-calculated.</p>
+            <h2>F40 Universe <span class="card-badge" id="scanner-count">—</span></h2>
+            <p class="card-desc">All 40 stocks ranked by zone. Entry (52W Low), exit (52W High), 200 DMA reference, and ABCD tranche levels in one view.</p>
           </div>
           <div class="table-toolbar">
             <input id="scanner-search" type="text" placeholder="Search ticker…" class="toolbar-input" />
             <select id="scanner-sector" class="toolbar-select">
               <option value="ALL">All sectors</option>
             </select>
+            <select id="scanner-cap" class="toolbar-select">
+              <option value="ALL">All caps</option>
+              <option value="Large Cap">Large Cap</option>
+              <option value="Mid Cap">Mid Cap</option>
+              <option value="Small Cap">Small Cap</option>
+            </select>
             <select id="scanner-sort" class="toolbar-select">
-              <option value="distance">Closest to 52W Low</option>
-              <option value="gain">Highest potential gain</option>
-              <option value="ticker">Ticker A–Z</option>
+              <option value="status">Sort: By Zone</option>
+              <option value="distance">Sort: Closest to 52W Low</option>
+              <option value="dist-high">Sort: Closest to 52W High</option>
+              <option value="gain">Sort: Highest potential gain</option>
+              <option value="ticker">Sort: Ticker A–Z</option>
             </select>
           </div>
           <div class="table-scroll">
@@ -133,59 +177,21 @@
                   <th>Close</th>
                   <th>52W Low</th>
                   <th>Dist to Low</th>
-                  <th>Exit Target<br/>(52W High)</th>
-                  <th>Potential<br/>Gain %</th>
+                  <th>52W High</th>
+                  <th>Pot. Gain %</th>
+                  <th>200 DMA</th>
+                  <th>Dist to DMA</th>
                   <th>ABCD-A<br/>&#8722;10%</th>
                   <th>ABCD-B<br/>&#8722;19%</th>
                   <th>ABCD-C<br/>&#8722;27%</th>
                   <th>ABCD-D<br/>&#8722;34%</th>
-                  <th>Signal</th>
+                  <th>Zone</th>
                 </tr>
               </thead>
               <tbody id="scanner-body"></tbody>
             </table>
           </div>
-          <div class="empty-state" id="scanner-empty" style="display:none">No stocks within 2% of 52W low right now.</div>
-        </div>
-
-        <!-- All-stocks proximity table -->
-        <div class="card">
-          <div class="card-header">
-            <h2>All F40 Stocks — Distance to 52W Levels</h2>
-            <p class="card-desc">Full watchlist ranked by proximity to entry/exit levels.</p>
-          </div>
-          <div class="table-toolbar">
-            <input id="all-stocks-search" type="text" placeholder="Search ticker…" class="toolbar-input" />
-            <select id="all-stocks-sector" class="toolbar-select">
-              <option value="ALL">All sectors</option>
-            </select>
-            <select id="all-stocks-sort" class="toolbar-select">
-              <option value="dist-low">Sort: Closest to 52W Low</option>
-              <option value="dist-high">Sort: Closest to 52W High</option>
-              <option value="gain">Sort: Highest potential gain</option>
-              <option value="ticker">Sort: Ticker A–Z</option>
-            </select>
-          </div>
-          <div class="table-scroll">
-            <table id="all-stocks-table">
-              <thead>
-                <tr>
-                  <th>Ticker</th>
-                  <th>Cap</th>
-                  <th>Sector</th>
-                  <th>Close</th>
-                  <th>52W Low</th>
-                  <th>Dist to Low</th>
-                  <th>52W High</th>
-                  <th>Dist to High</th>
-                  <th>200 DMA</th>
-                  <th>Dist to DMA</th>
-                  <th>Signals</th>
-                </tr>
-              </thead>
-              <tbody id="all-stocks-body"></tbody>
-            </table>
-          </div>
+          <div class="empty-state" id="scanner-empty" style="display:none">No F40 stocks match the current filters.</div>
         </div>
 
       </div><!-- /subtab-opportunities -->
@@ -199,11 +205,25 @@
           <div class="stock-list-panel">
             <div class="slp-header">
               <div class="slp-title">F40 Stocks</div>
-              <select id="slp-sector-filter" class="toolbar-select slp-sector">
+            </div>
+            <input id="slp-search" type="text" placeholder="Search ticker…" class="slp-search" />
+            <div class="slp-filters">
+              <select id="slp-sector-filter">
                 <option value="ALL">All sectors</option>
               </select>
+              <select id="slp-cap-filter">
+                <option value="ALL">All caps</option>
+                <option value="Large Cap">Large Cap</option>
+                <option value="Mid Cap">Mid Cap</option>
+                <option value="Small Cap">Small Cap</option>
+              </select>
+              <select id="slp-opportunity-filter">
+                <option value="ALL">All opportunities</option>
+                <option value="IN_ZONE">At 52W Low now</option>
+                <option value="APPROACHING">Approaching low</option>
+                <option value="NEAR">Near DMA</option>
+              </select>
             </div>
-            <input id="slp-search" type="text" placeholder="Search…" class="slp-search" />
             <ul id="stock-list" class="stock-list"></ul>
           </div>
 
@@ -268,26 +288,718 @@
 
       </div><!-- /subtab-stock-analysis -->
 
+      <!-- ── Sub-tab 3: Portfolio Backtest (52W) ──────────────────────── -->
+      <div class="subtab-panel" id="subtab-portfolio-backtest">
+
+        <!-- Exit mode + strategy toggle -->
+        <div class="exit-mode-bar" id="f40-exit-mode-bar">
+          <span class="exit-mode-label">Exit Mode</span>
+          <button class="exit-mode-btn active" data-mode="fixed">Fixed 52W High</button>
+          <button class="exit-mode-btn" data-mode="rolling" disabled>Rolling Ratchet
+            <span class="exit-diff-badge" id="f40-exit-diff" style="display:none"></span>
+          </button>
+          <span class="exit-mode-sep"></span>
+          <span class="exit-mode-label">Strategies</span>
+          <button class="exit-mode-btn env-btn active" data-env="none">52W Only</button>
+          <button class="exit-mode-btn env-btn" data-env="long" disabled>+Envelope
+            <span class="exit-diff-badge" id="f40-env-diff-long" style="display:none"></span>
+          </button>
+          <button class="exit-mode-btn env-btn" data-env="rally-f40" disabled>+Rally
+            <span class="exit-diff-badge" id="f40-rally-diff" style="display:none"></span>
+          </button>
+          <button class="exit-mode-btn env-btn" data-env="all" disabled>All 3
+            <span class="exit-diff-badge" id="f40-all3-diff" style="display:none"></span>
+          </button>
+        </div>
+
+        <div class="metric-row small" id="w52-pb-metric-row"></div>
+
+        <div class="section-label" style="margin-top:1rem;margin-bottom:0.4rem">Year-by-Year Returns</div>
+        <div id="w52-pb-yearly-wrap"></div>
+
+        <div class="section-label" style="margin-top:1.2rem;margin-bottom:0.4rem">Portfolio Equity Curve - Deployed vs Cash</div>
+        <div class="chart-wrap">
+          <div class="chart-legend-row">
+            <span class="legend-item"><span class="legend-area" style="background:#0d9488;opacity:0.75"></span>Deployed</span>
+            <span class="legend-item"><span class="legend-area" style="background:#475569;opacity:0.75"></span>Cash</span>
+            <span class="legend-item"><span class="legend-line" style="background:#94a3b8;border-style:dashed"></span>Initial &#8377;1L</span>
+          </div>
+          <div class="chart-container" id="w52-pb-chart-container">
+            <svg id="w52-pb-chart" preserveAspectRatio="none"></svg>
+            <div id="w52-pb-tooltip" class="chart-tooltip" style="display:none"></div>
+          </div>
+        </div>
+
+        <div class="section-label" style="margin-top:1.2rem;margin-bottom:0.4rem">Performance by Cap Tier</div>
+        <div class="metric-row small" id="w52-pb-tier-row"></div>
+
+        <div class="section-label" style="margin-top:1.2rem;margin-bottom:0.5rem">
+          Stocks
+          <span style="font-size:0.72rem;color:var(--muted);font-weight:400;margin-left:0.4rem">click to filter</span>
+        </div>
+        <div id="w52-pb-ticker-pills" class="ticker-pill-row"></div>
+
+        <div class="section-label" style="margin-top:1.2rem;margin-bottom:0.4rem">Full Trade Log
+          <span style="font-size:0.72rem;color:var(--muted);font-weight:400;margin-left:0.4rem">click a row for chart</span>
+        </div>
+        <div class="table-toolbar">
+          <input id="w52-pb-search" type="text" placeholder="Search ticker…" class="toolbar-input" />
+          <select id="w52-pb-filter-status" class="toolbar-select">
+            <option value="ALL">All outcomes</option>
+            <option value="TARGET_HIT">Target Hit</option>
+            <option value="OPEN">Open at end</option>
+          </select>
+          <select id="w52-pb-filter-cap" class="toolbar-select">
+            <option value="ALL">All caps</option>
+            <option value="Large Cap">Large Cap</option>
+            <option value="Mid Cap">Mid Cap</option>
+            <option value="Small Cap">Small Cap</option>
+          </select>
+          <select id="w52-pb-filter-tranche" class="toolbar-select">
+            <option value="ALL">All tranches</option>
+            <option value="INITIAL">Initial</option>
+            <option value="ABCD_A">ABCD-A</option>
+            <option value="ABCD_B">ABCD-B</option>
+            <option value="ABCD_C">ABCD-C</option>
+            <option value="ABCD_D">ABCD-D</option>
+            <option value="MOMENTUM">Momentum</option>
+          </select>
+          <select id="w52-pb-filter-strategy" class="toolbar-select">
+            <option value="ALL">All strategies</option>
+            <option value="52W">52W</option>
+            <option value="ENV_LONG">Env Long</option>
+            <option value="ENV_SHORT">Env Short</option>
+          </select>
+        </div>
+        <div class="table-scroll">
+          <table id="w52-pb-trade-table">
+            <thead>
+              <tr>
+                <th>#</th><th>Ticker</th><th>Cap</th><th>Strategy / Tranche</th>
+                <th>Entry Date</th><th>Entry &#8377;</th><th>Target &#8377;</th>
+                <th>Exit Date</th><th>Exit &#8377;</th>
+                <th>Days</th><th>P/L %</th><th>P/L &#8377;</th><th>Max DD</th><th>Outcome</th>
+              </tr>
+            </thead>
+            <tbody id="w52-pb-trade-body"></tbody>
+          </table>
+        </div>
+
+        <!-- Trade detail chart — shown when a row is clicked -->
+        <div id="w52-pb-trade-panel" class="trade-detail-panel" style="display:none">
+          <div class="trade-detail-header">
+            <span id="w52-pb-trade-panel-title" class="trade-detail-title"></span>
+            <button class="panel-close-btn" onclick="closePbTradePanel('w52')">&#x2715;</button>
+          </div>
+          <div class="chart-container" id="w52-pb-trade-chart-container" style="height:260px">
+            <svg id="w52-pb-trade-chart" width="100%" height="260" preserveAspectRatio="none"></svg>
+            <div id="w52-pb-trade-chart-tip" class="chart-tooltip" style="display:none"></div>
+          </div>
+        </div>
+
+        <div class="empty-state" id="w52-pb-empty" style="display:none">
+          No portfolio backtest data. Run <code>f40_portfolio_backtest.py</code> then <code>build_data.py</code>.
+        </div>
+
+      </div><!-- /subtab-portfolio-backtest -->
+
     </section><!-- /page-52w -->
 
-    <!-- Placeholders -->
+    <!-- ═══════════════════════════════════════════════════════════════════
+         S200 — 20% RALLY  PAGE
+    ════════════════════════════════════════════════════════════════════ -->
+    <section class="page" id="page-s200rally">
+
+      <div class="page-header">
+        <div>
+          <h1>20% Rally</h1>
+          <p class="page-sub">Buy the retracement &nbsp;·&nbsp; Sell the re-run &nbsp;·&nbsp; Below 200 DMA only &nbsp;·&nbsp; 365-day validity</p>
+        </div>
+        <div class="header-chips">
+          <span class="chip chip-universe">F40 · E40 · S200</span>
+          <span class="chip chip-strategy">Mean Reversion</span>
+        </div>
+      </div>
+
+      <!-- Summary metric cards -->
+      <div class="metric-row" id="metric-row-s200rally"></div>
+
+      <!-- Sub-tab navigation -->
+      <div class="subtab-nav">
+        <button class="s200-subtab-btn active" data-s200tab="scanner">Rally Scanner</button>
+        <button class="s200-subtab-btn"        data-s200tab="stock-analysis">Stock Analysis</button>
+        <button class="s200-subtab-btn"        data-s200tab="portfolio-backtest">Portfolio Backtest</button>
+      </div>
+
+      <!-- ── Sub-tab 1: Scanner ─────────────────────────────────────── -->
+      <div class="s200-subtab-panel active" id="s200tab-scanner">
+
+        <div class="status-filter-row" id="rally-status-filter">
+          <button class="status-filter-btn active" data-status="ALL">All</button>
+          <button class="status-filter-btn sfb-zone"        data-status="IN_ZONE">In Zone <span class="sfb-count" id="sfb-count-zone">0</span></button>
+          <button class="status-filter-btn sfb-approaching" data-status="APPROACHING">Approaching <span class="sfb-count" id="sfb-count-app">0</span></button>
+          <button class="status-filter-btn sfb-near"        data-status="WATCHING_NEAR">Near <span class="sfb-count" id="sfb-count-near">0</span></button>
+          <button class="status-filter-btn"                 data-status="WATCHING">Watching <span class="sfb-count" id="sfb-count-watch">0</span></button>
+          <button class="status-filter-btn sfb-below"       data-status="BELOW_BUY">Below Buy <span class="sfb-count" id="sfb-count-below">0</span></button>
+        </div>
+
+        <div class="card" id="rally-card">
+          <div class="card-header">
+            <h2>Rally Opportunities <span class="card-badge" id="rally-count">—</span></h2>
+            <p class="card-desc">Valid 20% green-candle rallies with buy zone below 200 DMA. Sorted by proximity to buy zone.</p>
+          </div>
+          <div class="table-toolbar">
+            <input id="rally-search"  type="text" placeholder="Search ticker…" class="toolbar-input" />
+            <select id="rally-watchlist" class="toolbar-select">
+              <option value="ALL">All lists</option>
+              <option value="F40">F40</option>
+              <option value="E40">E40</option>
+              <option value="S200">S200</option>
+            </select>
+            <select id="rally-sector" class="toolbar-select"><option value="ALL">All sectors</option></select>
+            <select id="rally-cap"    class="toolbar-select">
+              <option value="ALL">All caps</option>
+              <option value="Large Cap">Large Cap</option>
+              <option value="Mid Cap">Mid Cap</option>
+              <option value="Small Cap">Small Cap</option>
+            </select>
+            <select id="rally-sort"   class="toolbar-select">
+              <option value="status">Sort: By Status</option>
+              <option value="dist">Sort: Closest to Buy Zone</option>
+              <option value="gain">Sort: Highest Gain</option>
+              <option value="expiry">Sort: Expiring Soon</option>
+              <option value="rally_pct">Sort: Biggest Rally</option>
+              <option value="ticker">Sort: Ticker A–Z</option>
+            </select>
+          </div>
+          <div class="table-scroll">
+            <table id="rally-table">
+              <thead>
+                <tr>
+                  <th>Ticker</th><th>Cap</th><th>Sector</th><th>Price</th>
+                  <th>Buy Zone</th><th>Dist to Buy</th><th>Sell Target</th>
+                  <th>Pot. Gain</th><th>Rally %</th><th>Candles</th>
+                  <th>Rally End</th><th>Expiry</th><th>200 DMA</th><th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="rally-body"></tbody>
+            </table>
+          </div>
+          <div class="empty-state" id="rally-empty" style="display:none">No opportunities found. Run <code>s200_20pct_rally_scanner.py</code> then <code>build_data.py</code>.</div>
+        </div>
+
+      </div><!-- /s200tab-scanner -->
+
+      <!-- ── Sub-tab 2: Stock Analysis ──────────────────────────────── -->
+      <div class="s200-subtab-panel" id="s200tab-stock-analysis">
+
+        <!-- Aggregate backtest summary (5Y historical) -->
+        <div class="section-label" style="margin-bottom:0.4rem">5-Year Historical Backtest - Across All Stocks</div>
+        <div class="metric-row small" id="s200-agg-bt-metric-row"></div>
+
+        <div class="stock-analysis-layout">
+
+          <!-- Left panel: stock list -->
+          <div class="stock-list-panel">
+            <div class="slp-header">
+              <div class="slp-title">Rally Stocks</div>
+            </div>
+            <input id="s200-slp-search" type="text" placeholder="Search ticker…" class="slp-search" />
+            <div class="slp-filters">
+              <select id="s200-slp-sector">
+                <option value="ALL">All sectors</option>
+              </select>
+              <select id="s200-slp-watchlist">
+                <option value="ALL">All lists</option>
+                <option value="F40">F40</option>
+                <option value="E40">E40</option>
+                <option value="S200">S200</option>
+              </select>
+              <select id="s200-slp-cap">
+                <option value="ALL">All caps</option>
+                <option value="Large Cap">Large Cap</option>
+                <option value="Mid Cap">Mid Cap</option>
+                <option value="Small Cap">Small Cap</option>
+              </select>
+              <select id="s200-slp-status">
+                <option value="ALL">All status</option>
+                <option value="IN_ZONE">In Zone</option>
+                <option value="APPROACHING">Approaching</option>
+                <option value="WATCHING_NEAR">Near</option>
+                <option value="WATCHING">Watching</option>
+                <option value="BELOW_BUY">Below Buy</option>
+              </select>
+            </div>
+            <ul id="s200-stock-list" class="stock-list"></ul>
+          </div>
+
+          <!-- Right panel: chart + details -->
+          <div class="stock-detail-panel">
+
+            <div class="metric-row small" id="s200-stock-metric-row"></div>
+
+            <div class="chart-wrap">
+              <div class="chart-legend-row">
+                <span class="legend-item"><span class="legend-line" style="background:#22c55e"></span>Up candle</span>
+                <span class="legend-item"><span class="legend-line" style="background:#ef4444"></span>Down candle</span>
+                <span class="legend-item"><span class="legend-line" style="background:#f59e0b;border-style:dashed"></span>200 DMA</span>
+                <span class="legend-item"><span class="legend-line" style="background:#a78bfa;border-style:dashed"></span>52W High</span>
+                <span class="legend-item"><span class="legend-line" style="background:#f97316;border-style:dashed"></span>52W Low</span>
+                <span class="legend-item"><span class="rally-legend-zone"></span>Buy Zone</span>
+                <span class="legend-item"><span class="legend-line" style="background:#ef4444;border-style:dashed"></span>Sell Target</span>
+                <span class="legend-item"><span class="rally-legend-form"></span>Rally Formation</span>
+              </div>
+              <div class="chart-container" id="s200-chart-container">
+                <svg id="s200-main-chart" preserveAspectRatio="none"></svg>
+                <div id="s200-chart-tooltip" class="chart-tooltip" style="display:none"></div>
+              </div>
+              <div class="range-buttons">
+                <button class="s200-range-btn" data-range="0.5">6M</button>
+                <button class="s200-range-btn active" data-range="1">1Y</button>
+                <button class="s200-range-btn" data-range="2">2Y</button>
+              </div>
+            </div>
+
+            <div class="section-title" id="s200-stock-title">Select a stock from the list</div>
+            <div class="table-scroll">
+              <table id="s200-rally-detail-table">
+                <thead>
+                  <tr>
+                    <th>#</th><th>Rally Period</th><th>Candles</th><th>Rally %</th>
+                    <th>Buy Zone</th><th>Sell Target</th><th>Pot. Gain</th>
+                    <th>Status</th><th>Days to Expiry</th>
+                  </tr>
+                </thead>
+                <tbody id="s200-rally-detail-body"></tbody>
+              </table>
+            </div>
+
+            <!-- ── Per-stock historical backtest ──────────────────── -->
+            <div class="section-label" id="s200-bt-label" style="margin-top:1.5rem;display:none">Historical Backtest - How this stock performed on the same strategy (5Y)</div>
+            <div class="metric-row small" id="s200-bt-metric-row"></div>
+            <div class="table-scroll" id="s200-bt-table-wrap" style="display:none">
+              <table id="s200-bt-trades-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Rally End</th>
+                    <th>Rally %</th>
+                    <th>Buy Zone</th>
+                    <th>Sell Target</th>
+                    <th>Entry Date</th>
+                    <th>Entry &#8377;</th>
+                    <th>Exit Date</th>
+                    <th>Exit &#8377;</th>
+                    <th>Days</th>
+                    <th>P/L %</th>
+                    <th>Max DD</th>
+                    <th>Result</th>
+                  </tr>
+                </thead>
+                <tbody id="s200-bt-trades-body"></tbody>
+              </table>
+            </div>
+            <div class="empty-state" id="s200-bt-empty" style="display:none">No historical backtest data. Run <code>s200_20pct_rally_backtest.py</code> then <code>build_data.py</code>.</div>
+
+          </div><!-- /stock-detail-panel -->
+        </div><!-- /stock-analysis-layout -->
+
+      </div><!-- /s200tab-stock-analysis -->
+
+      <!-- ── Sub-tab 3: Portfolio Backtest (S200 Rally) ───────────────── -->
+      <div class="s200-subtab-panel" id="s200tab-portfolio-backtest">
+
+        <div class="metric-row small" id="s200-pb-metric-row"></div>
+
+        <div class="section-label" style="margin-top:1rem;margin-bottom:0.4rem">Year-by-Year Returns</div>
+        <div id="s200-pb-yearly-wrap"></div>
+
+        <div class="section-label" style="margin-top:1.2rem;margin-bottom:0.4rem">Portfolio Equity Curve - Deployed vs Cash</div>
+        <div class="chart-wrap">
+          <div class="chart-legend-row">
+            <span class="legend-item"><span class="legend-area" style="background:#0d9488;opacity:0.75"></span>Deployed</span>
+            <span class="legend-item"><span class="legend-area" style="background:#475569;opacity:0.75"></span>Cash</span>
+            <span class="legend-item"><span class="legend-line" style="background:#94a3b8;border-style:dashed"></span>Initial &#8377;1L</span>
+          </div>
+          <div class="chart-container" id="s200-pb-chart-container">
+            <svg id="s200-pb-chart" preserveAspectRatio="none"></svg>
+            <div id="s200-pb-tooltip" class="chart-tooltip" style="display:none"></div>
+          </div>
+        </div>
+
+        <div class="section-label" style="margin-top:1.2rem;margin-bottom:0.4rem">Performance by Cap Tier</div>
+        <div class="metric-row small" id="s200-pb-tier-row"></div>
+
+        <div class="section-label" style="margin-top:1.2rem;margin-bottom:0.5rem">
+          Stocks
+          <span style="font-size:0.72rem;color:var(--muted);font-weight:400;margin-left:0.4rem">click to filter</span>
+        </div>
+        <div id="s200-pb-ticker-pills" class="ticker-pill-row"></div>
+
+        <div class="section-label" style="margin-top:1.2rem;margin-bottom:0.4rem">Full Trade Log
+          <span style="font-size:0.72rem;color:var(--muted);font-weight:400;margin-left:0.4rem">click a row for chart</span>
+        </div>
+        <div class="table-toolbar">
+          <input id="s200-pb-search" type="text" placeholder="Search ticker…" class="toolbar-input" />
+          <select id="s200-pb-filter-status" class="toolbar-select">
+            <option value="ALL">All outcomes</option>
+            <option value="TARGET_HIT">Target Hit</option>
+            <option value="EXPIRED">Expired</option>
+            <option value="OPEN">Open at end</option>
+          </select>
+          <select id="s200-pb-filter-cap" class="toolbar-select">
+            <option value="ALL">All caps</option>
+            <option value="Large Cap">Large Cap</option>
+            <option value="Mid Cap">Mid Cap</option>
+            <option value="Small Cap">Small Cap</option>
+          </select>
+          <select id="s200-pb-filter-tranche" class="toolbar-select">
+            <option value="ALL">All tranches</option>
+            <option value="INITIAL">Initial</option>
+            <option value="ABCD_A">ABCD-A</option>
+            <option value="ABCD_B">ABCD-B</option>
+            <option value="MOMENTUM">Momentum</option>
+          </select>
+        </div>
+        <div class="table-scroll">
+          <table id="s200-pb-trade-table">
+            <thead>
+              <tr>
+                <th>#</th><th>Ticker</th><th>Cap</th><th>Tranche</th>
+                <th>Entry Date</th><th>Entry &#8377;</th><th>Target &#8377;</th>
+                <th>Exit Date</th><th>Exit &#8377;</th>
+                <th>Days</th><th>P/L %</th><th>P/L &#8377;</th><th>Max DD</th><th>Outcome</th>
+              </tr>
+            </thead>
+            <tbody id="s200-pb-trade-body"></tbody>
+          </table>
+        </div>
+
+        <!-- Trade detail chart — shown when a row is clicked -->
+        <div id="s200-pb-trade-panel" class="trade-detail-panel" style="display:none">
+          <div class="trade-detail-header">
+            <span id="s200-pb-trade-panel-title" class="trade-detail-title"></span>
+            <button class="panel-close-btn" onclick="closePbTradePanel('s200')">&#x2715;</button>
+          </div>
+          <div class="chart-container" id="s200-pb-trade-chart-container" style="height:260px">
+            <svg id="s200-pb-trade-chart" width="100%" height="260" preserveAspectRatio="none"></svg>
+            <div id="s200-pb-trade-chart-tip" class="chart-tooltip" style="display:none"></div>
+          </div>
+        </div>
+
+        <div class="empty-state" id="s200-pb-empty" style="display:none">
+          No portfolio backtest data. Run <code>s200_portfolio_backtest.py</code> then <code>build_data.py</code>.
+        </div>
+
+      </div><!-- /s200tab-portfolio-backtest -->
+
+    </section><!-- /page-s200rally -->
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         ENVELOPE STRATEGY  PAGE
+    ════════════════════════════════════════════════════════════════════ -->
     <section class="page" id="page-envelope">
-      <div class="page-header"><h1>Envelope Strategy</h1></div>
-      <div class="coming-soon-card"><div class="cs-icon">&#9643;</div><h2>Coming Soon</h2><p>Lower envelope entry · Upper envelope exit · Combined with 52W rules.</p></div>
-    </section>
+
+      <div class="page-header">
+        <div>
+          <h1>Envelope Strategy</h1>
+          <p class="page-sub">Mean reversion on 200 DMA envelope &nbsp;·&nbsp; F40 universe &nbsp;·&nbsp; No stop-loss &nbsp;·&nbsp; Price-band exits</p>
+        </div>
+        <div class="header-chips">
+          <span class="chip chip-universe">F40</span>
+          <span class="chip chip-strategy">Mean Reversion</span>
+        </div>
+      </div>
+
+      <!-- Parameter panel -->
+      <div id="env-param-panel" class="param-panel">
+        <div class="param-row">
+          <label class="param-label">Envelope %
+            <input type="number" id="ep-env-pct" value="14" min="5" max="25" step="1">
+          </label>
+          <label class="param-label">Large Cap Alloc %
+            <input type="number" id="ep-alloc-large" value="3" min="0.5" max="10" step="0.5">
+          </label>
+          <label class="param-label">Mid Cap Alloc %
+            <input type="number" id="ep-alloc-mid" value="2" min="0.5" max="10" step="0.5">
+          </label>
+          <label class="param-label">Small Cap Alloc %
+            <input type="number" id="ep-alloc-small" value="1" min="0.5" max="10" step="0.5">
+          </label>
+          <label class="param-label">Zone %
+            <input type="number" id="ep-band" value="1" min="0.25" max="3" step="0.25">
+          </label>
+        </div>
+        <div class="param-row">
+          <div class="param-toggle" id="ep-exit-toggle">
+            <button class="active" data-epmode="fixed">Fixed exit (at entry)</button>
+            <button data-epmode="rolling">Rolling exit (tracks MA)</button>
+          </div>
+          <label class="param-check">
+            <input type="checkbox" id="ep-pyramid"> Pyramid up at 200 DMA cross
+          </label>
+          <button id="ep-run-btn" class="run-btn">&#9654; Run Backtest</button>
+          <span id="ep-loading" class="loading-pill" style="display:none">&#8987; Computing (~30s)&hellip;</span>
+          <span id="ep-last-run" class="last-run-badge" style="display:none"></span>
+          <button id="ep-grid-toggle-btn" class="run-btn" style="background:#2a4a7f;margin-left:8px">&#128202; Grid Search</button>
+        </div>
+
+        <!-- Grid Search panel (collapsed by default) -->
+        <div id="ep-grid-panel" style="display:none;border-top:1px solid #2a3a5c;margin-top:10px;padding-top:10px">
+          <div class="param-row" style="flex-wrap:wrap;gap:6px 16px;font-size:0.8rem">
+            <label class="param-label" style="font-size:0.78rem">Env% list
+              <input type="text" id="gs-env-pcts" value="12,13,14,15,16,17" style="width:140px">
+            </label>
+            <label class="param-label" style="font-size:0.78rem">Zone% list
+              <input type="text" id="gs-zone-pcts" value="0,0.5,1,1.5,2,2.5" style="width:140px">
+            </label>
+            <label class="param-label" style="font-size:0.78rem">Large alloc%
+              <input type="text" id="gs-alloc-large" value="3,4,5" style="width:90px">
+            </label>
+            <label class="param-label" style="font-size:0.78rem">Mid alloc%
+              <input type="text" id="gs-alloc-mid" value="2,2.5,3,3.5" style="width:90px">
+            </label>
+            <label class="param-label" style="font-size:0.78rem">Small alloc%
+              <input type="text" id="gs-alloc-small" value="1.5,2,2.5" style="width:90px">
+            </label>
+            <label class="param-label" style="font-size:0.78rem">Exit modes
+              <input type="text" id="gs-exit-modes" value="fixed,rolling" style="width:120px">
+            </label>
+            <label class="param-label" style="font-size:0.78rem">Pyramid
+              <input type="text" id="gs-pyramid" value="true,false" style="width:90px">
+            </label>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;margin-top:8px">
+            <button id="ep-grid-btn" class="run-btn" style="background:#1a6a3f">&#9654; Run Grid Search</button>
+            <button id="ep-grid-stop-btn" class="run-btn" style="background:#7a1a1a;display:none">&#9632; Stop</button>
+            <span id="ep-grid-status" style="font-size:0.8rem;color:#8899aa"></span>
+          </div>
+          <!-- Progress bar -->
+          <div id="ep-grid-progress-wrap" style="display:none;margin-top:8px">
+            <div style="display:flex;justify-content:space-between;font-size:0.75rem;color:#8899aa;margin-bottom:3px">
+              <span id="ep-grid-prog-label">0 / 0 combos</span>
+              <span id="ep-grid-eta"></span>
+            </div>
+            <div style="background:#1a2a4a;border-radius:4px;height:6px;overflow:hidden">
+              <div id="ep-grid-prog-bar" style="background:#2a7a5f;height:100%;width:0%;transition:width 0.3s"></div>
+            </div>
+          </div>
+          <!-- Best so far -->
+          <div id="ep-grid-best" style="display:none;margin-top:8px;padding:6px 10px;background:#0d1f3a;border-radius:4px;font-size:0.78rem;color:#aabbcc">
+            <strong style="color:#4fc3f7">Best so far:</strong>
+            <span id="ep-grid-best-text"></span>
+          </div>
+          <!-- Live top-10 table -->
+          <div id="ep-grid-table-wrap" style="display:none;margin-top:10px;overflow-x:auto;max-height:280px;overflow-y:auto">
+            <table style="width:100%;border-collapse:collapse;font-size:0.75rem">
+              <thead>
+                <tr style="background:#1a2a4a;color:#8899cc">
+                  <th style="padding:4px 6px;text-align:right">#</th>
+                  <th style="padding:4px 6px;text-align:right">CAGR</th>
+                  <th style="padding:4px 6px;text-align:right">Env%</th>
+                  <th style="padding:4px 6px;text-align:right">Zone%</th>
+                  <th style="padding:4px 6px;text-align:right">Lg%</th>
+                  <th style="padding:4px 6px;text-align:right">Mid%</th>
+                  <th style="padding:4px 6px;text-align:right">Sm%</th>
+                  <th style="padding:4px 6px">Exit</th>
+                  <th style="padding:4px 6px">Pyr</th>
+                  <th style="padding:4px 6px;text-align:right">Trades</th>
+                  <th style="padding:4px 6px;text-align:right">WinR%</th>
+                  <th style="padding:4px 6px;text-align:right">MaxDD%</th>
+                </tr>
+              </thead>
+              <tbody id="ep-grid-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Strategy selector bar -->
+      <div class="exit-mode-bar" id="env-strategy-bar">
+        <span class="exit-mode-label">Strategy</span>
+        <button class="exit-mode-btn active" data-envmode="long">
+          Long Full
+          <span style="font-size:0.68rem;opacity:0.7;margin-left:4px">L&#8594;U</span>
+        </button>
+        <button class="exit-mode-btn" data-envmode="lower">
+          Lower Half
+          <span class="exit-diff-badge" id="env-lower-diff" style="display:none"></span>
+        </button>
+        <button class="exit-mode-btn" data-envmode="upper">
+          Upper Half
+          <span class="exit-diff-badge" id="env-upper-diff" style="display:none"></span>
+        </button>
+        <button class="exit-mode-btn" data-envmode="combined">
+          All Combined
+          <span class="exit-diff-badge" id="env-combined-diff" style="display:none"></span>
+        </button>
+      </div>
+
+      <!-- Strategy explanation pills -->
+      <div id="env-mode-desc" style="margin-bottom:1rem"></div>
+
+      <!-- Strategy-level metric cards -->
+      <div class="metric-row" id="env-metric-row"></div>
+
+      <!-- Sub-tab navigation -->
+      <div class="subtab-nav">
+        <button class="env-subtab-btn active" data-envtab="backtest">Backtest Results</button>
+        <button class="env-subtab-btn" data-envtab="tradelog">Trade Log</button>
+      </div>
+
+      <!-- ── Sub-tab 1: Backtest Results ───────────────────────────────── -->
+      <div class="env-subtab-panel active" id="envtab-backtest">
+
+        <div class="metric-row small" id="env-pb-metric-row"></div>
+
+        <div class="section-label" style="margin-top:1rem;margin-bottom:0.4rem">Year-by-Year Returns</div>
+        <div id="env-pb-yearly-wrap"></div>
+
+        <div class="section-label" style="margin-top:1.2rem;margin-bottom:0.4rem">Portfolio Equity Curve — Deployed vs Cash</div>
+        <div class="chart-wrap">
+          <div class="chart-legend-row">
+            <span class="legend-item"><span class="legend-area" style="background:#0d9488;opacity:0.75"></span>Deployed</span>
+            <span class="legend-item"><span class="legend-area" style="background:#475569;opacity:0.75"></span>Cash</span>
+            <span class="legend-item"><span class="legend-line" style="background:#94a3b8;border-style:dashed"></span>Initial &#8377;1L</span>
+          </div>
+          <div class="chart-container" id="env-pb-chart-container">
+            <svg id="env-pb-chart" preserveAspectRatio="none"></svg>
+            <div id="env-pb-tooltip" class="chart-tooltip" style="display:none"></div>
+          </div>
+        </div>
+
+        <div class="section-label" style="margin-top:1.2rem;margin-bottom:0.4rem">Performance by Cap Tier</div>
+        <div class="metric-row small" id="env-pb-tier-row"></div>
+
+        <div class="empty-state" id="env-pb-empty" style="display:none">
+          No data yet. Run <code>envelope_portfolio_backtest.py</code> then <code>build_data.py</code>.
+        </div>
+
+      </div><!-- /envtab-backtest -->
+
+      <!-- ── Sub-tab 2: Trade Log ───────────────────────────────────────── -->
+      <div class="env-subtab-panel" id="envtab-tradelog">
+
+        <div class="section-label" style="margin-bottom:0.5rem">
+          Stocks
+          <span style="font-size:0.72rem;color:var(--muted);font-weight:400;margin-left:0.4rem">click to filter</span>
+        </div>
+        <div id="env-pb-ticker-pills" class="ticker-pill-row"></div>
+
+        <div class="section-label" style="margin-top:1.2rem;margin-bottom:0.4rem">Full Trade Log
+          <span style="font-size:0.72rem;color:var(--muted);font-weight:400;margin-left:0.4rem">click a row for chart</span>
+        </div>
+        <div class="table-toolbar">
+          <input id="env-pb-search" type="text" placeholder="Search ticker…" class="toolbar-input" />
+          <select id="env-pb-filter-status" class="toolbar-select">
+            <option value="ALL">All outcomes</option>
+            <option value="ENV_EXIT">Env Exit (full)</option>
+            <option value="MA_EXIT">MA Exit (lower half)</option>
+            <option value="OPEN">Still Open</option>
+          </select>
+          <select id="env-pb-filter-cap" class="toolbar-select">
+            <option value="ALL">All caps</option>
+            <option value="Large Cap">Large Cap</option>
+            <option value="Mid Cap">Mid Cap</option>
+            <option value="Small Cap">Small Cap</option>
+          </select>
+          <select id="env-pb-filter-strategy" class="toolbar-select">
+            <option value="ALL">All strategies</option>
+            <option value="LONG_FULL">Long Full</option>
+            <option value="LOWER_HALF">Lower Half</option>
+            <option value="UPPER_HALF">Upper Half</option>
+          </select>
+        </div>
+        <div class="table-scroll">
+          <table id="env-pb-trade-table">
+            <thead>
+              <tr>
+                <th>#</th><th>Ticker</th><th>Cap</th><th>Strategy</th>
+                <th>Entry Date</th><th>Entry &#8377;</th><th>Target &#8377;</th>
+                <th>Exit Date</th><th>Exit &#8377;</th>
+                <th>Days</th><th>P/L %</th><th>P/L &#8377;</th><th>Max DD</th><th>Outcome</th>
+              </tr>
+            </thead>
+            <tbody id="env-pb-trade-body"></tbody>
+          </table>
+        </div>
+
+        <!-- Trade detail chart -->
+        <div id="env-pb-trade-panel" class="trade-detail-panel" style="display:none">
+          <div class="trade-detail-header">
+            <span id="env-pb-trade-panel-title" class="trade-detail-title"></span>
+            <button class="panel-close-btn" onclick="closeEnvTradePanel()">&#x2715;</button>
+          </div>
+          <div class="chart-container" id="env-pb-trade-chart-container" style="height:260px">
+            <svg id="env-pb-trade-chart" width="100%" height="260" preserveAspectRatio="none"></svg>
+            <div id="env-pb-trade-chart-tip" class="chart-tooltip" style="display:none"></div>
+          </div>
+        </div>
+
+        <div class="empty-state" id="env-tradelog-empty" style="display:none">
+          No data. Run <code>envelope_portfolio_backtest.py</code> then <code>build_data.py</code>.
+        </div>
+
+      </div><!-- /envtab-tradelog -->
+
+    </section><!-- /page-envelope -->
 
     <section class="page" id="page-abcd">
       <div class="page-header"><h1>ABCD Averaging</h1></div>
-      <div class="coming-soon-card"><div class="cs-icon">&#8595;</div><h2>Coming Soon</h2><p>Tranche ladder: Initial + A/B/C/D at &#8722;10% steps · Each tranche exits independently.</p></div>
+      <div class="coming-soon-card"><div class="cs-icon"><i class="ti ti-stairs"></i></div><h2>Coming Soon</h2><p>Tranche ladder: Initial + A/B/C/D at -10% steps · Each tranche exits independently.</p></div>
     </section>
 
     <section class="page" id="page-combined">
       <div class="page-header"><h1>Combined Scanner</h1></div>
-      <div class="coming-soon-card"><div class="cs-icon">&#10010;</div><h2>Coming Soon</h2><p>Stocks where 2 or more strategies align simultaneously.</p></div>
+      <div class="coming-soon-card"><div class="cs-icon"><i class="ti ti-filters"></i></div><h2>Coming Soon</h2><p>Stocks where 2 or more strategies align simultaneously.</p></div>
     </section>
 
   </div><!-- /main-wrapper -->
 
   <script src="app.js"></script>
+
+  <!-- ── Version Toggle ─────────────────────────────────────────
+       Fixed bottom-right pill. V1 = Classic stylesheet (styles.css).
+       V2 = Redesigned stylesheet (styles_v2.css) using Taste Skill.
+       Preference persisted in localStorage as 'hi-version'.
+  ─────────────────────────────────────────────────────────────── -->
+  <div id="version-toggle" role="group" aria-label="Switch dashboard version">
+    <button class="vt-btn" id="vt-v1" aria-pressed="true" title="Classic design (V1)">V1</button>
+    <span class="vt-sep" aria-hidden="true"></span>
+    <button class="vt-btn" id="vt-v2" aria-pressed="false" title="Redesigned with Taste Skill (V2)">V2</button>
+    <span class="vt-label">Classic / New</span>
+  </div>
+
+  <script>
+  (function () {
+    var v1Sheet = document.getElementById('v1-sheet');
+    var v2Sheet = document.getElementById('v2-sheet');
+    var btnV1   = document.getElementById('vt-v1');
+    var btnV2   = document.getElementById('vt-v2');
+
+    function applyVersion(v) {
+      if (v === 'v2') {
+        v1Sheet.disabled = true;
+        v2Sheet.disabled = false;
+      } else {
+        v1Sheet.disabled = false;
+        v2Sheet.disabled = true;
+      }
+      btnV1.classList.toggle('active', v === 'v1');
+      btnV2.classList.toggle('active', v === 'v2');
+      btnV1.setAttribute('aria-pressed', String(v === 'v1'));
+      btnV2.setAttribute('aria-pressed', String(v === 'v2'));
+      try { localStorage.setItem('hi-version', v); } catch(e) {}
+    }
+
+    btnV1.addEventListener('click', function () { applyVersion('v1'); });
+    btnV2.addEventListener('click', function () { applyVersion('v2'); });
+
+    // Default to V2 to showcase new design; respect stored preference
+    var saved = 'v2';
+    try { saved = localStorage.getItem('hi-version') || 'v2'; } catch(e) {}
+    applyVersion(saved);
+  })();
+  </script>
 </body>
 </html>
