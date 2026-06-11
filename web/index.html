@@ -845,6 +845,8 @@
       <div class="subtab-nav">
         <button class="env-subtab-btn active" data-envtab="backtest">Backtest Results</button>
         <button class="env-subtab-btn" data-envtab="tradelog">Trade Log</button>
+        <button class="env-subtab-btn" data-envtab="scanner">Opportunity Scanner</button>
+        <button class="env-subtab-btn" data-envtab="stockanalysis">Stock Analysis</button>
       </div>
 
       <!-- ── Sub-tab 1: Backtest Results ───────────────────────────────── -->
@@ -941,6 +943,104 @@
         </div>
 
       </div><!-- /envtab-tradelog -->
+
+      <!-- ── Sub-tab 3: Opportunity Scanner ──────────────────────────────── -->
+      <div class="env-subtab-panel" id="envtab-scanner">
+
+        <div class="status-filter-row">
+          <button class="w52-sfb env-sfb active" data-envzone="ALL">All <span id="env-scan-total">40</span></button>
+          <button class="w52-sfb env-sfb sfb-zone" data-envzone="CANDIDATE">Candidate <span class="sfb-count" id="env-sfb-cand-count">0</span></button>
+          <button class="w52-sfb env-sfb sfb-approaching" data-envzone="NEAR">Within 10% <span class="sfb-count" id="env-sfb-near-count">0</span></button>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h2>F40 &mdash; Envelope Levels Today <span class="card-badge" id="env-scan-count">—</span></h2>
+            <p class="card-desc">Current prices vs 200 DMA &plusmn;<span id="env-scan-ep">14</span>% envelope bands. Sorted by proximity to lower band (buy zone). Run pipeline to refresh.</p>
+          </div>
+          <div class="table-toolbar">
+            <input id="env-scan-search" type="text" placeholder="Search ticker&hellip;" class="toolbar-input" />
+            <select id="env-scan-cap" class="toolbar-select">
+              <option value="ALL">All caps</option>
+              <option value="Large Cap">Large Cap</option>
+              <option value="Mid Cap">Mid Cap</option>
+              <option value="Small Cap">Small Cap</option>
+            </select>
+          </div>
+          <div class="table-scroll">
+            <table id="env-scan-table">
+              <thead>
+                <tr>
+                  <th>Ticker</th><th>Cap</th><th>Sector</th>
+                  <th>Close</th><th>200 DMA</th>
+                  <th>Lower Env</th><th>Dist to Lower</th>
+                  <th>Upper Env</th><th>Upside to Upper</th>
+                  <th>PE / 5yr avg</th><th>Signal</th>
+                </tr>
+              </thead>
+              <tbody id="env-scan-body"></tbody>
+            </table>
+          </div>
+          <div class="empty-state" id="env-scan-empty" style="display:none">No stocks match the current filters.</div>
+        </div>
+
+      </div><!-- /envtab-scanner -->
+
+      <!-- ── Sub-tab 4: Stock Analysis ─────────────────────────────────────── -->
+      <div class="env-subtab-panel" id="envtab-stockanalysis">
+
+        <div class="stock-analysis-layout">
+
+          <!-- Left panel: stock list -->
+          <div class="stock-list-panel">
+            <div class="slp-header"><div class="slp-title">F40 Stocks</div></div>
+            <input id="env-sa-search" type="text" placeholder="Search&hellip;" class="slp-search" />
+            <ul id="env-sa-list" class="stock-list"></ul>
+          </div>
+
+          <!-- Right panel: stock detail -->
+          <div class="stock-detail-panel">
+            <div class="metric-row small" id="env-sa-metric-row"></div>
+
+            <div class="chart-wrap">
+              <div class="chart-legend-row">
+                <span class="legend-item"><span class="legend-line" style="background:#38bdf8"></span>Close</span>
+                <span class="legend-item"><span class="legend-line" style="background:#f59e0b;border-style:dashed"></span>200 DMA</span>
+                <span class="legend-item"><span class="legend-line" style="background:#22c55e;border-style:dashed"></span>Lower Env</span>
+                <span class="legend-item"><span class="legend-line" style="background:#ef4444;border-style:dashed"></span>Upper Env</span>
+                <span class="legend-item"><span class="legend-circ buy-circ"></span>Entry</span>
+                <span class="legend-item"><span class="legend-circ sell-circ"></span>Exit</span>
+                <span class="legend-item"><span class="legend-circ open-circ"></span>Open</span>
+              </div>
+              <div class="chart-container" id="env-sa-chart-container">
+                <svg id="env-sa-chart" preserveAspectRatio="none"></svg>
+                <div id="env-sa-tooltip" class="chart-tooltip" style="display:none"></div>
+              </div>
+              <div class="range-buttons">
+                <button class="range-btn env-sa-rb active" data-range="0">All</button>
+                <button class="range-btn env-sa-rb" data-range="3">3Y</button>
+                <button class="range-btn env-sa-rb" data-range="1">1Y</button>
+              </div>
+            </div>
+
+            <div class="section-title" id="env-sa-trade-title">Select a stock from the list</div>
+            <div class="table-scroll">
+              <table id="env-sa-trades-table">
+                <thead>
+                  <tr>
+                    <th>#</th><th>Strategy</th><th>Entry Date</th><th>Entry &#8377;</th>
+                    <th>Target &#8377;</th><th>Exit Date</th><th>Exit &#8377;</th>
+                    <th>Days</th><th>P/L %</th><th>P/L &#8377;</th><th>Outcome</th>
+                  </tr>
+                </thead>
+                <tbody id="env-sa-trades-body"></tbody>
+              </table>
+            </div>
+          </div><!-- /stock-detail-panel -->
+
+        </div><!-- /stock-analysis-layout -->
+
+      </div><!-- /envtab-stockanalysis -->
 
     </section><!-- /page-envelope -->
 

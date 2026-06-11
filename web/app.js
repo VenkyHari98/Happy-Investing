@@ -165,6 +165,8 @@ document.querySelectorAll('.nav-item:not(.disabled)').forEach((item) => {
     item.classList.add('active');
     el(`page-${item.dataset.page}`)?.classList.add('active');
     el('sidebar').classList.remove('open');
+    // Re-render charts that were drawn at fallback dimensions while the page was hidden
+    if (item.dataset.page === 'envelope') drawEnvPortfolioChart();
   });
 });
 
@@ -2229,14 +2231,16 @@ let   _envSelectedTrade = null; // trade row highlighted for chart
 let   _envInited = false;       // filter event listeners wired once
 const _envFilters = { search: '', status: 'ALL', cap: 'ALL', strategy: 'ALL', ticker: null };
 
-// Sub-tab: backtest or tradelog
+// Sub-tab: backtest | tradelog | scanner | stockanalysis
 document.querySelectorAll('.env-subtab-btn').forEach((btn) => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.env-subtab-btn').forEach((b) => b.classList.remove('active'));
     document.querySelectorAll('.env-subtab-panel').forEach((p) => p.classList.remove('active'));
     btn.classList.add('active');
     el(`envtab-${btn.dataset.envtab}`)?.classList.add('active');
-    if (btn.dataset.envtab === 'backtest') drawEnvPortfolioChart();
+    if (btn.dataset.envtab === 'backtest')       drawEnvPortfolioChart();
+    if (btn.dataset.envtab === 'scanner')        renderEnvScanner();
+    if (btn.dataset.envtab === 'stockanalysis')  renderEnvStockAnalysis();
   });
 });
 window.addEventListener('resize', () => {
@@ -2974,6 +2978,347 @@ function updateEnvDiffBadges() {
 }
 
 /* ── Master render ────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════
+   ENVELOPE OPPORTUNITY SCANNER  (Sub-tab 3)
+═══════════════════════════════════════════════════════════════ */
+
+let _envScanZone   = 'ALL';
+let _envScanCap    = 'ALL';
+let _envScanQ      = '';
+let _envScanInited = false;
+
+function renderEnvScanner() {
+  const body  = el('env-scan-body');
+  const empty = el('env-scan-empty');
+  if (!body) return;
+
+  // Wire up filters once
+  if (!_envScanInited) {
+    _envScanInited = true;
+    el('env-scan-search')?.addEventListener('input',  (e) => { _envScanQ   = e.target.value;  renderEnvScanner(); });
+    el('env-scan-cap')?.addEventListener('change',    (e) => { _envScanCap = e.target.value;  renderEnvScanner(); });
+    document.querySelectorAll('.env-sfb').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.env-sfb').forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+        _envScanZone = btn.dataset.envzone;
+        renderEnvScanner();
+      });
+    });
+  }
+
+  const ep = _envActive?.meta?.envelope_pct ?? 14;
+  const epEl = el('env-scan-ep');
+  if (epEl) epEl.textContent = ep;
+
+  const q = (_envScanQ || '').toLowerCase();
+  let filtered = scannerRows.filter((r) => {
+    if (q && !r.ticker.toLowerCase().includes(q)) return false;
+    if (_envScanCap !== 'ALL' && r.cap_tier !== _envScanCap) return false;
+    const dist = r.distance_to_lower_envelope_pct;
+    if (_envScanZone === 'CANDIDATE' && !(r.signals || []).includes('ENVELOPE_LONG_CANDIDATE')) return false;
+    if (_envScanZone === 'NEAR' && (dist == null || dist > 10)) return false;
+    return true;
+  });
+
+  // Sort: closest to lower envelope first (ascending distance)
+  filtered.sort((a, b) => (a.distance_to_lower_envelope_pct ?? 99) - (b.distance_to_lower_envelope_pct ?? 99));
+
+  // Update count badges
+  const cCand = scannerRows.filter((r) => (r.signals || []).includes('ENVELOPE_LONG_CANDIDATE')).length;
+  const cNear = scannerRows.filter((r) => r.distance_to_lower_envelope_pct != null && r.distance_to_lower_envelope_pct <= 10).length;
+  const setW  = (id, v) => { const e = el(id); if (e) e.textContent = v; };
+  setW('env-scan-total', scannerRows.length);
+  setW('env-sfb-cand-count', cCand);
+  setW('env-sfb-near-count', cNear);
+  setW('env-scan-count', filtered.length);
+
+  body.innerHTML = '';
+  if (empty) empty.style.display = filtered.length ? 'none' : 'block';
+  if (!filtered.length) return;
+
+  filtered.forEach((r) => {
+    const dist   = r.distance_to_lower_envelope_pct;
+    const isCand = (r.signals || []).includes('ENVELOPE_LONG_CANDIDATE');
+    const distCls = isCand ? 'dist-green' : (dist != null && dist <= 10 ? 'dist-amber' : 'dist-muted');
+    const upside  = r.upper_envelope && r.close ? ((r.upper_envelope - r.close) / r.close * 100) : null;
+    const peStr   = r.pe_current != null
+      ? `${r.pe_current.toFixed(0)}<span style="color:var(--muted);font-size:0.72rem"> / ${r.pe_5yr_avg != null ? r.pe_5yr_avg.toFixed(0) : '—'}</span>`
+      : '—';
+    const sigHtml = isCand
+      ? '<span class="signal-pill signal-env">LONG CANDIDATE</span>'
+      : dist != null && dist <= 5
+      ? '<span class="signal-pill signal-none">APPROACHING</span>'
+      : '';
+
+    body.insertAdjacentHTML('beforeend', `<tr>
+      <td style="font-weight:600">${r.ticker}</td>
+      <td><span class="cap-badge ${capCls(r.cap_tier)}">${r.cap_tier?.replace(' Cap', '') || '—'}</span></td>
+      <td style="color:var(--muted);font-size:0.8rem">${r.sector || '—'}</td>
+      <td>${fmtCur(r.close)}</td>
+      <td style="color:var(--amber)">${fmtCur(r.ma)}</td>
+      <td style="color:var(--green)">${fmtCur(r.lower_envelope)}</td>
+      <td class="${distCls}" style="font-size:0.85rem;font-family:var(--font-mono)">${dist != null ? fmtPct(dist) : '—'}</td>
+      <td style="color:var(--red)">${fmtCur(r.upper_envelope)}</td>
+      <td class="pnl-pos" style="font-size:0.85rem;font-family:var(--font-mono)">${upside != null ? fmtPct(upside) : '—'}</td>
+      <td style="font-size:0.82rem">${peStr}</td>
+      <td>${sigHtml}</td>
+    </tr>`);
+  });
+}
+
+/* ══════════════════════════════════════════════════════════════
+   ENVELOPE STOCK ANALYSIS  (Sub-tab 4)
+═══════════════════════════════════════════════════════════════ */
+
+let _envSATicker    = null;
+let _envSARangeYrs  = 0;
+let _envSAInited    = false;
+
+function renderEnvStockAnalysis() {
+  if (!_envSAInited) {
+    _envSAInited = true;
+    el('env-sa-search')?.addEventListener('input', () => renderEnvSAStockList());
+    document.querySelectorAll('.env-sa-rb').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.env-sa-rb').forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+        _envSARangeYrs = parseInt(btn.dataset.range, 10);
+        if (_envSATicker) drawEnvSAChart(_envSATicker);
+      });
+    });
+    window.addEventListener('resize', () => {
+      if (el('envtab-stockanalysis')?.classList.contains('active') && _envSATicker) drawEnvSAChart(_envSATicker);
+    });
+  }
+  renderEnvSAStockList();
+  if (_envSATicker) renderEnvSADetail(_envSATicker);
+}
+
+function renderEnvSAStockList() {
+  const listEl = el('env-sa-list');
+  if (!listEl) return;
+  const prices = _envActive?.stock_prices || {};
+  const tickers = Object.keys(prices).sort();
+  const q = (el('env-sa-search')?.value || '').toLowerCase();
+
+  // Build a live-data lookup from scannerRows
+  const liveMap = new Map(scannerRows.map((r) => [r.ticker, r]));
+  // Build a trades count lookup
+  const tradesMap = new Map();
+  (_envActive?.trades || []).forEach((t) => {
+    tradesMap.set(t.ticker, (tradesMap.get(t.ticker) || 0) + 1);
+  });
+
+  listEl.innerHTML = '';
+  tickers.filter((tk) => !q || tk.toLowerCase().includes(q)).forEach((tk) => {
+    const live = liveMap.get(tk);
+    const trCnt = tradesMap.get(tk) || 0;
+    const isCand = (live?.signals || []).includes('ENVELOPE_LONG_CANDIDATE');
+    const dist = live?.distance_to_lower_envelope_pct;
+    const distLabel = dist != null
+      ? `<span class="dist-text ${isCand ? 'dist-green' : dist <= 10 ? 'dist-amber' : 'dist-muted'}">${fmtPct(dist)}</span>`
+      : '';
+    const isActive = tk === _envSATicker;
+    listEl.insertAdjacentHTML('beforeend',
+      `<li class="stock-list-item${isActive ? ' active' : ''}" data-ticker="${tk}">
+        <div class="sli-main">
+          <span class="sli-ticker">${tk}</span>
+          ${isCand ? '<span class="signal-pill signal-env" style="font-size:0.65rem;padding:1px 5px">CANDIDATE</span>' : ''}
+        </div>
+        <div class="sli-sub">${trCnt} trade${trCnt !== 1 ? 's' : ''} &nbsp;${distLabel}</div>
+      </li>`
+    );
+  });
+
+  listEl.querySelectorAll('.stock-list-item').forEach((li) => {
+    li.addEventListener('click', () => {
+      _envSATicker = li.dataset.ticker;
+      renderEnvSAStockList();
+      renderEnvSADetail(_envSATicker);
+    });
+  });
+}
+
+function renderEnvSADetail(ticker) {
+  const prices  = _envActive?.stock_prices?.[ticker] || [];
+  const trades  = (_envActive?.trades || []).filter((t) => t.ticker === ticker);
+  const live    = scannerRows.find((r) => r.ticker === ticker);
+
+  const titleEl = el('env-sa-trade-title');
+  if (titleEl) titleEl.textContent = `${ticker} — ${trades.length} trades`;
+
+  // Metric cards
+  const wins    = trades.filter((t) => t.pnl_pct != null && t.pnl_pct >= 0 && t.exit_reason !== 'OPEN').length;
+  const closed  = trades.filter((t) => t.exit_reason !== 'OPEN').length;
+  const openCnt = trades.filter((t) => t.exit_reason === 'OPEN').length;
+  const avgPnl  = closed ? trades.filter((t) => t.exit_reason !== 'OPEN').reduce((s, t) => s + (t.pnl_pct || 0), 0) / closed : null;
+  buildMetricCards(el('env-sa-metric-row'), [
+    { label: 'Current Price', value: fmtCur(live?.close),            cls: 'accent' },
+    { label: 'Lower Env',     value: fmtCur(live?.lower_envelope),   cls: 'green' },
+    { label: 'Upper Env',     value: fmtCur(live?.upper_envelope),   cls: 'red' },
+    { label: 'Dist to Lower', value: live?.distance_to_lower_envelope_pct != null ? fmtPct(live.distance_to_lower_envelope_pct) : '—',
+      cls: (live?.signals || []).includes('ENVELOPE_LONG_CANDIDATE') ? 'green' : '' },
+    { label: 'Trades',        value: trades.length, sub: `${openCnt} open` },
+    { label: 'Win Rate',      value: closed ? fmtPct(wins / closed * 100) : '—', cls: closed && wins / closed >= 0.5 ? 'green' : 'amber' },
+    { label: 'Avg P/L',       value: fmtPct(avgPnl), cls: (avgPnl || 0) >= 0 ? 'green' : 'red' },
+  ]);
+
+  drawEnvSAChart(ticker);
+
+  // Trade table
+  const tbody = el('env-sa-trades-body');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+  trades.forEach((t, i) => {
+    const stColor  = ENV_STRATEGY_COLORS[t.strategy] || '#94a3b8';
+    const stLabel  = { LONG_FULL: 'Long↑', LOWER_HALF: 'Lower½', UPPER_HALF: 'Upper½' }[t.strategy] || t.strategy;
+    const pnlCls   = (t.pnl_pct || 0) >= 0 ? 'pnl-pos' : 'pnl-neg';
+    const outcome  = t.exit_reason === 'ENV_EXIT'
+      ? '<span class="exit-badge" style="background:rgba(34,197,94,0.15);color:var(--green);border-color:rgba(34,197,94,0.3)">ENV EXIT</span>'
+      : t.exit_reason === 'MA_EXIT'
+      ? '<span class="exit-badge" style="background:rgba(56,189,248,0.15);color:var(--accent);border-color:rgba(56,189,248,0.3)">MA EXIT</span>'
+      : '<span class="exit-badge" style="background:rgba(148,163,184,0.12);color:var(--muted)">OPEN</span>';
+    tbody.insertAdjacentHTML('beforeend', `<tr>
+      <td style="color:var(--muted)">${i + 1}</td>
+      <td><span style="font-size:0.78rem;font-weight:600;color:${stColor}">${stLabel}</span></td>
+      <td style="color:var(--muted);font-size:0.8rem">${t.entry_date ?? '—'}</td>
+      <td>${fmtCur(t.entry_price)}</td>
+      <td style="color:var(--accent)">${fmtCur(t.exit_target)}</td>
+      <td style="color:var(--muted);font-size:0.8rem">${t.exit_date ?? '—'}</td>
+      <td>${t.exit_price != null ? fmtCur(t.exit_price) : '—'}</td>
+      <td style="color:var(--muted)">${t.trade_duration_days != null ? t.trade_duration_days + 'd' : '—'}</td>
+      <td class="${pnlCls}">${t.pnl_pct != null ? fmtPct(t.pnl_pct) : '—'}</td>
+      <td class="${pnlCls}">${t.pnl != null ? fmtCur(t.pnl) : '—'}</td>
+      <td>${outcome}</td>
+    </tr>`);
+  });
+}
+
+function drawEnvSAChart(ticker) {
+  const svg = el('env-sa-chart');
+  const tip = el('env-sa-tooltip');
+  const ctr = el('env-sa-chart-container');
+  if (!svg || !ctr) return;
+
+  const allPrices = _envActive?.stock_prices?.[ticker] || [];
+  if (!allPrices.length) { svg.innerHTML = ''; return; }
+
+  let prices = allPrices;
+  if (_envSARangeYrs > 0) {
+    const cut = new Date();
+    cut.setFullYear(cut.getFullYear() - _envSARangeYrs);
+    const cutStr = cut.toISOString().slice(0, 10);
+    prices = allPrices.filter((p) => p.date >= cutStr);
+  }
+  if (!prices.length) { svg.innerHTML = ''; return; }
+
+  const W  = ctr.clientWidth  || 860;
+  const H  = ctr.clientHeight || 320;
+  const PL = 58, PR = 12, PT = 14, PB = 30;
+  const CW = W - PL - PR, CH = H - PT - PB;
+  const ns = 'http://www.w3.org/2000/svg';
+  const mk = (tag, attrs, parent) => {
+    const e = document.createElementNS(ns, tag);
+    Object.entries(attrs).forEach(([k, v]) => e.setAttribute(k, v));
+    parent.appendChild(e);
+    return e;
+  };
+
+  const pStart = prices[0].date, pEnd = prices[prices.length - 1].date;
+  const trades = (_envActive?.trades || []).filter((t) => t.ticker === ticker);
+
+  const allVals = prices.flatMap((p) => [p.close, p.ma200, p.env_lower, p.env_upper].filter(Boolean));
+  const minV = Math.min(...allVals) * 0.975;
+  const maxV = Math.max(...allVals) * 1.025;
+  const rng  = maxV - minV || 1;
+  const n    = prices.length;
+
+  const xPos = (i) => PL + (i / (n - 1 || 1)) * CW;
+  const yPos = (v) => PT + CH - ((v - minV) / rng) * CH;
+
+  svg.setAttribute('width',   W);
+  svg.setAttribute('height',  H);
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.innerHTML = '';
+
+  // Grid lines + Y labels
+  for (let i = 0; i <= 4; i++) {
+    const v = minV + (rng / 4) * i, yp = yPos(v);
+    mk('line', { x1: PL, x2: PL + CW, y1: yp, y2: yp, stroke: '#1c2e45', 'stroke-width': '0.8' }, svg);
+    mk('text', { x: PL - 6, y: yp + 4, 'text-anchor': 'end', fill: '#4e6278', 'font-size': '11', 'font-family': 'JetBrains Mono,monospace' }, svg).textContent = fmt(v, 0);
+  }
+  // X labels — one per year
+  const seenYr = new Set();
+  prices.forEach((p, i) => {
+    const yr = p.date.slice(0, 4);
+    if (seenYr.has(yr)) return;
+    seenYr.add(yr);
+    mk('text', { x: xPos(i), y: H - 4, 'text-anchor': 'middle', fill: '#4e6278', 'font-size': '11', 'font-family': 'JetBrains Mono,monospace' }, svg).textContent = yr;
+  });
+
+  // Indicator lines
+  const drawLine = (color, key, dash) => {
+    let d = '';
+    prices.forEach((p, i) => {
+      if (p[key] == null) return;
+      d += `${d === '' || prices[i - 1]?.[key] == null ? 'M' : 'L'} ${xPos(i).toFixed(1)} ${yPos(p[key]).toFixed(1)} `;
+    });
+    if (!d) return;
+    const attr = { d: d.trim(), fill: 'none', stroke: color, 'stroke-width': '1.5' };
+    if (dash) attr['stroke-dasharray'] = '5,4';
+    mk('path', attr, svg);
+  };
+  drawLine('#f59e0b', 'ma200',     true);
+  drawLine('#22c55e', 'env_lower', true);
+  drawLine('#ef4444', 'env_upper', true);
+
+  // Close price (solid, on top)
+  const closePath = prices.map((p, i) => `${i === 0 ? 'M' : 'L'} ${xPos(i).toFixed(1)} ${yPos(p.close).toFixed(1)}`).join(' ');
+  mk('path', { d: closePath, fill: 'none', stroke: '#38bdf8', 'stroke-width': '2' }, svg);
+
+  // Trade markers
+  trades.forEach((t) => {
+    const isOpen = t.exit_reason === 'OPEN';
+    if (t.entry_date >= pStart && t.entry_date <= pEnd) {
+      const ei = prices.findIndex((p) => p.date >= t.entry_date);
+      if (ei !== -1) mk('circle', { cx: xPos(ei).toFixed(1), cy: yPos(prices[ei].close).toFixed(1), r: '5', fill: '#22c55e', stroke: '#070c15', 'stroke-width': '1.5' }, svg);
+    }
+    if (!isOpen && t.exit_date >= pStart && t.exit_date <= pEnd) {
+      const xi = prices.findIndex((p) => p.date >= t.exit_date);
+      if (xi !== -1) mk('circle', { cx: xPos(xi).toFixed(1), cy: yPos(prices[xi].close).toFixed(1), r: '5', fill: '#ef4444', stroke: '#070c15', 'stroke-width': '1.5' }, svg);
+    }
+    if (isOpen && t.entry_date >= pStart) {
+      const oi = prices.findIndex((p) => p.date >= t.entry_date);
+      if (oi !== -1) mk('circle', { cx: xPos(oi).toFixed(1), cy: yPos(prices[oi].close).toFixed(1), r: '6', fill: '#f59e0b', stroke: '#070c15', 'stroke-width': '1.5' }, svg);
+    }
+  });
+
+  // Hover overlay + tooltip
+  const overlay = mk('rect', { x: PL, y: PT, width: CW, height: CH, fill: 'transparent', cursor: 'crosshair' }, svg);
+  const crossV  = mk('line', { x1: 0, x2: 0, y1: PT, y2: PT + CH, stroke: '#475569', 'stroke-width': '1', 'stroke-dasharray': '3,3', visibility: 'hidden' }, svg);
+
+  overlay.addEventListener('mousemove', (e) => {
+    const rect = ctr.getBoundingClientRect();
+    const idx  = Math.max(0, Math.min(n - 1, Math.round(((e.clientX - rect.left - PL) / CW) * (n - 1))));
+    const p = prices[idx];
+    if (!p || !tip) return;
+    const xp = xPos(idx);
+    crossV.setAttribute('x1', xp); crossV.setAttribute('x2', xp); crossV.setAttribute('visibility', 'visible');
+    tip.style.display = 'block';
+    tip.innerHTML = `
+      <div class="tooltip-date">${p.date}</div>
+      <div class="tooltip-row"><span class="tooltip-label">Close</span><span class="tooltip-val" style="color:#38bdf8">${fmtCur(p.close)}</span></div>
+      ${p.ma200     != null ? `<div class="tooltip-row"><span class="tooltip-label">200 DMA</span><span class="tooltip-val" style="color:#f59e0b">${fmtCur(p.ma200)}</span></div>` : ''}
+      ${p.env_lower != null ? `<div class="tooltip-row"><span class="tooltip-label">Lower Env</span><span class="tooltip-val" style="color:#22c55e">${fmtCur(p.env_lower)}</span></div>` : ''}
+      ${p.env_upper != null ? `<div class="tooltip-row"><span class="tooltip-label">Upper Env</span><span class="tooltip-val" style="color:#ef4444">${fmtCur(p.env_upper)}</span></div>` : ''}
+    `;
+    const tipW = 178, left = xp + PL + 12 + tipW > W ? xp + PL - tipW - 12 : xp + PL + 12;
+    tip.style.left = `${left}px`; tip.style.top = `${PT + 8}px`;
+  });
+  overlay.addEventListener('mouseleave', () => { crossV.setAttribute('visibility', 'hidden'); if (tip) tip.style.display = 'none'; });
+}
+
 function renderEnvTab() {
   updateEnvModeDesc();
   renderEnvSummary();

@@ -45,7 +45,7 @@ def simulate_envelope_long_strategy(
     pe_series: Optional["pd.Series"] = None,
     pe_5yr_median: Optional["pd.Series"] = None,
     fund_metrics: Optional[Dict] = None,
-) -> List[Trade]:
+) -> tuple[List[Trade], List[Dict]]:
     trades: List[Trade] = []
     df = df.copy()
     df["ma"] = df["close"].rolling(window=ma_period, min_periods=ma_period).mean()
@@ -71,6 +71,7 @@ def simulate_envelope_long_strategy(
     open_tranches: list = []
     abcd_opened: set = set()
     initial_slippage_cost: float = 0.0
+    skipped_entries: List[Dict] = []
 
     for i in range(ma_period, len(df)):
         row = df.iloc[i]
@@ -155,6 +156,14 @@ def simulate_envelope_long_strategy(
                 "allocation_pct": allocation_pct,
             })
 
+        # ── Track missed initial entries (signal fires while cycle is running) ──
+        elif open_tranches and low <= entry_threshold and vol > 0:
+            skipped_entries.append({
+                "date":   date,
+                "price":  round(float(lower), 2),
+                "reason": "cycle_active",
+            })
+
         # ── ABCD ENTRIES: average down when price falls from INITIAL ──────────
         if open_tranches and vol > 0:
             initial_entry = open_tranches[0]["entry_price"]
@@ -180,7 +189,7 @@ def simulate_envelope_long_strategy(
                     abcd_opened.add(label)
                     break  # one tranche per day
 
-    return trades
+    return trades, skipped_entries
 
 
 def simulate_envelope_short_strategy(
@@ -349,12 +358,8 @@ def run_backtest(
     all_trades: List[Trade] = []
     errors: List[str] = []
 
-    simulate_func = (
-        simulate_envelope_long_strategy
-        if direction.lower() == "long"
-        else simulate_envelope_short_strategy
-    )
-    strategy_name = "Envelope Long" if direction.lower() == "long" else "Envelope Short"
+    is_long = direction.lower() == "long"
+    strategy_name = "Envelope Long" if is_long else "Envelope Short"
 
     # Parallel OHLCV downloads (cache-aware)
     print(f"Downloading {len(stocks)} stocks in parallel ({backtest_years}y each)...")
@@ -363,7 +368,7 @@ def run_backtest(
     # Historical PE series + Phase 2 fundamentals — only needed for long entries
     pe_series_map:   Dict[str, tuple] = {}
     fund_metrics_map: Dict[str, Optional[Dict]] = {}
-    if direction.lower() == "long":
+    if is_long:
         print(f"Fetching historical PE series for {len(stock_dfs)} stocks (weekly cached)...")
         pe_series_map = fetch_all_pe_series_parallel(stock_dfs.keys())
         pe_ok = sum(1 for v in pe_series_map.values() if v[0] is not None)
@@ -374,6 +379,8 @@ def run_backtest(
         fund_ok = sum(1 for v in fund_metrics_map.values() if v is not None)
         print(f"  Phase 2 data available for {fund_ok}/{len(stock_dfs)} stocks")
 
+    stock_data_map: Dict[str, Dict] = {}
+
     for ticker, df in stock_dfs.items():
         if df.empty:
             continue
@@ -381,24 +388,41 @@ def run_backtest(
         allocation_pct = allocations.get(cap_tier, 0.03)
         pe_pair = pe_series_map.get(ticker, (None, None))
 
-        trades = simulate_func(
-            df,
-            ticker,
-            cap_tier,
-            sector,
-            portfolio_value=portfolio_value,
-            allocation_pct=allocation_pct,
-            ma_period=ma_period,
-            envelope_pct=envelope_pct,
-            entry_band_pct=entry_band_pct,
-            slippage_pct=slippage_pct,
-            ma_type=ma_type,
-            **({"pe_series": pe_pair[0], "pe_5yr_median": pe_pair[1],
-                "fund_metrics": fund_metrics_map.get(ticker)}
-               if direction.lower() == "long" else {}),
-        )
-        print(f"  {ticker}: {len(trades)} trades")
+        if is_long:
+            trades, skipped = simulate_envelope_long_strategy(
+                df, ticker, cap_tier, sector,
+                portfolio_value=portfolio_value,
+                allocation_pct=allocation_pct,
+                ma_period=ma_period,
+                envelope_pct=envelope_pct,
+                entry_band_pct=entry_band_pct,
+                slippage_pct=slippage_pct,
+                ma_type=ma_type,
+                pe_series=pe_pair[0],
+                pe_5yr_median=pe_pair[1],
+                fund_metrics=fund_metrics_map.get(ticker),
+            )
+        else:
+            trades = simulate_envelope_short_strategy(
+                df, ticker, cap_tier, sector,
+                portfolio_value=portfolio_value,
+                allocation_pct=allocation_pct,
+                ma_period=ma_period,
+                envelope_pct=envelope_pct,
+                entry_band_pct=entry_band_pct,
+                slippage_pct=slippage_pct,
+                ma_type=ma_type,
+            )
+            skipped = []
+
+        print(f"  {ticker}: {len(trades)} trades, {len(skipped)} skipped signals")
         all_trades.extend(trades)
+        stock_data_map[ticker] = {
+            "ticker":          ticker,
+            "cap_tier":        cap_tier,
+            "sector":          sector,
+            "skipped_entries": skipped,
+        }
 
     metrics = compute_portfolio_metrics(all_trades)
     summary = {
@@ -415,7 +439,13 @@ def run_backtest(
         "stocks_tested": len(stocks),
         "metrics": metrics,
     }
-    build_report(output_folder, summary, all_trades, errors, strategy_name="Envelope Long")
+    build_report(output_folder, summary, all_trades, errors, strategy_name=strategy_name)
+
+    # Per-stock skipped entries (used by the frontend chart to show missed signals)
+    stock_data_path = output_folder / "stock_data.json"
+    with stock_data_path.open("w", encoding="utf-8") as f:
+        json.dump({"run_date": summary["backtest_date"], "stock_data": stock_data_map}, f, indent=2)
+    print(f"  Saved stock_data.json")
     print("Backtest complete!")
 
 

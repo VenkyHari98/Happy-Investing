@@ -55,7 +55,7 @@ def simulate_52w_strategy(
     pe_series: Optional[pd.Series] = None,
     pe_5yr_median: Optional[pd.Series] = None,
     fund_metrics: Optional[Dict] = None,
-) -> Tuple[List[Trade], List[Dict[str, Any]], Dict[str, int]]:
+) -> Tuple[List[Trade], List[Dict[str, Any]], Dict[str, int], List[Dict[str, Any]]]:
     """
     Simulate 52W Low->High strategy with fixed exit targets and multi-entry.
 
@@ -72,6 +72,7 @@ def simulate_52w_strategy(
 
     # Each element: {entry_date, entry_price, exit_target (FIXED), shares, entry_value, slippage_buy}
     open_positions: List[Dict[str, Any]] = []
+    skipped_entries: List[Dict[str, Any]] = []
     filter_stats = {
         "blocked_200dma": 0,
         "blocked_pe": 0,
@@ -140,6 +141,14 @@ def simulate_52w_strategy(
         open_positions = still_open
 
         # ── Entry check ──────────────────────────────────────────────────────────────
+        # Track when signal fires but position limit is already full
+        if low <= entry_band_high and vol > 0 and len(open_positions) >= max_concurrent:
+            skipped_entries.append({
+                "date":   date,
+                "price":  round(float(w52_low), 2),
+                "reason": "limit_full",
+            })
+
         if low <= entry_band_high and vol > 0 and len(open_positions) < max_concurrent:
             entry_price = max(w52_low, low)
 
@@ -210,7 +219,7 @@ def simulate_52w_strategy(
             "pct_to_target":    round(pct_to_target, 2),
         })
 
-    return trades, open_details, filter_stats
+    return trades, open_details, filter_stats, skipped_entries
 
 
 def build_price_series(df: pd.DataFrame, ma_period: int = 200) -> List[Dict[str, Any]]:
@@ -286,7 +295,7 @@ def run_backtest(
         allocation = allocations.get(cap_tier, 0.03)
 
         pe_pair = pe_series_map.get(ticker, (None, None))
-        trades, open_positions, fstats = simulate_52w_strategy(
+        trades, open_positions, fstats, skipped = simulate_52w_strategy(
             df, ticker, cap_tier, sector,
             portfolio_value=portfolio_value,
             allocation_pct=allocation,
@@ -324,9 +333,10 @@ def run_backtest(
             "pe_current":     pe_current,
             "pe_3yr_avg":     pe_3yr_avg,
             "pe_5yr_avg":     pe_5yr_avg,
-            "open_positions": open_positions,
-            "prices":         price_series,
-            "trades":         [t.to_dict() for t in trades],
+            "open_positions":   open_positions,
+            "prices":           price_series,
+            "trades":           [t.to_dict() for t in trades],
+            "skipped_entries":  skipped,
         }
 
     metrics = compute_portfolio_metrics(all_trades)

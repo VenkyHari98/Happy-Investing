@@ -51,6 +51,7 @@ class SimTrade:
     cap_tier: str
     sector: str
     watchlist_source: str
+    rally_start_date: str
     rally_end_date: str
     rally_pct: float
     candle_count: int
@@ -97,6 +98,7 @@ def _simulate_trade(
         return SimTrade(
             ticker=ticker, cap_tier=cap_tier, sector=sector,
             watchlist_source=watchlist_source,
+            rally_start_date=rally["rally_start_date"],
             rally_end_date=rally["rally_end_date"],
             rally_pct=rally["rally_pct"], candle_count=rally["candle_count"],
             buy_price=buy_price, buy_zone_low=buy_zone_low, buy_zone_high=buy_zone_high,
@@ -138,6 +140,7 @@ def _simulate_trade(
                 return SimTrade(
                     ticker=ticker, cap_tier=cap_tier, sector=sector,
                     watchlist_source=watchlist_source,
+                    rally_start_date=rally["rally_start_date"],
                     rally_end_date=rally["rally_end_date"],
                     rally_pct=rally["rally_pct"], candle_count=rally["candle_count"],
                     buy_price=buy_price, buy_zone_low=buy_zone_low, buy_zone_high=buy_zone_high,
@@ -162,6 +165,7 @@ def _simulate_trade(
     return SimTrade(
         ticker=ticker, cap_tier=cap_tier, sector=sector,
         watchlist_source=watchlist_source,
+        rally_start_date=rally["rally_start_date"],
         rally_end_date=rally["rally_end_date"],
         rally_pct=rally["rally_pct"], candle_count=rally["candle_count"],
         buy_price=buy_price, buy_zone_low=buy_zone_low, buy_zone_high=buy_zone_high,

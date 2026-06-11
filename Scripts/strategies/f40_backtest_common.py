@@ -341,6 +341,18 @@ def _col_val(stmt, col, keys) -> Optional[float]:
     return None
 
 
+def _screener_pledged(ticker: str) -> Optional[float]:
+    """Return latest promoter pledge % from Screener.in cache, or None."""
+    try:
+        from screener_cache import load_screener_data
+        sc = load_screener_data(ticker)
+        if sc:
+            return sc.get("pledged_pct_latest")
+    except Exception:
+        pass
+    return None
+
+
 def fetch_fundamental_metrics(ticker: str) -> Optional[Dict]:
     """
     Fetch Phase 2 fundamental metrics via yfinance annual + quarterly statements.
@@ -496,8 +508,8 @@ def fetch_fundamental_metrics(ticker: str) -> Optional[Dict]:
                 "opm_3yr":           [v for _, v in opm_series[:3]] if opm_series else None,
                 "sales_vs_ath_pct":  sales_vs_ath,
                 "profit_vs_ath_pct": profit_vs_ath,
-                # Section 4 — Governance (gate wired; data requires Screener.in)
-                "pledged_pct":       None,
+                # Section 4 — Governance — filled from Screener.in cache when available
+                "pledged_pct":       _screener_pledged(ticker),
                 # Historical series (for backtests — forward-fill by date)
                 "roce_series":       roce_dict,
                 "roe_series":        roe_dict,
@@ -548,7 +560,7 @@ def fetch_all_fundamentals_parallel(
 
 
 def fetch_stock_pe(ticker: str) -> Optional[float]:
-    """Fetch trailing P/E from yfinance. Returns None if unavailable."""
+    """Fetch trailing P/E. Tries yfinance first, falls back to Screener.in cache."""
     symbols = [f"{ticker}.BO"] if ticker.isdigit() else [f"{ticker}.NS", f"{ticker}.BO"]
     for symbol in symbols:
         try:
@@ -558,6 +570,15 @@ def fetch_stock_pe(ticker: str) -> Optional[float]:
                 return round(float(pe), 1)
         except Exception:
             pass
+    # Screener.in fallback — critical for insurance / NBFC / financial holding companies
+    # where yfinance has no standard EPS data.
+    try:
+        from screener_cache import load_screener_data
+        sc = load_screener_data(ticker)
+        if sc and sc.get("pe_ttm") and sc["pe_ttm"] > 0:
+            return round(float(sc["pe_ttm"]), 1)
+    except Exception:
+        pass
     return None
 
 
@@ -617,6 +638,51 @@ def fetch_historical_pe_avgs(ticker: str) -> Tuple[Optional[float], Optional[flo
             return pe_3yr, pe_5yr
         except Exception:
             pass
+
+    # Screener.in fallback — compute PE from Screener EPS history + yfinance monthly prices.
+    # Covers insurance / financial stocks where yfinance has no income statement EPS.
+    try:
+        from screener_cache import load_screener_data
+        sc = load_screener_data(ticker)
+        if sc and sc.get("eps_annual"):
+            symbols = [f"{ticker}.BO"] if ticker.isdigit() else [f"{ticker}.NS", f"{ticker}.BO"]
+            for symbol in symbols:
+                try:
+                    hist = yf.Ticker(symbol).history(period="6y", interval="1mo", auto_adjust=True)
+                    if hist is None or hist.empty:
+                        continue
+                    hist_idx = hist.index.tz_localize(None) if hist.index.tz is not None else hist.index
+                    pe_vals: List[float] = []
+                    # eps_annual keys are like "Mar 2024" — sort newest first
+                    for period_label, eps_val in sorted(
+                        sc["eps_annual"].items(),
+                        key=lambda kv: kv[0],
+                        reverse=True,
+                    )[:6]:
+                        try:
+                            eps = float(eps_val)
+                            if not (eps > 0) or np.isnan(eps):
+                                continue
+                            ts = pd.Timestamp(period_label)
+                            idx = int(hist_idx.searchsorted(ts))
+                            if idx >= len(hist):
+                                idx = len(hist) - 1
+                            price = float(hist["Close"].iloc[idx])
+                            pe = price / eps
+                            if 0 < pe < 2000:
+                                pe_vals.append(round(pe, 1))
+                        except Exception:
+                            continue
+                    if pe_vals:
+                        n3 = min(len(pe_vals), 3)
+                        n5 = min(len(pe_vals), 5)
+                        return round(sum(pe_vals[:n3]) / n3, 1), round(sum(pe_vals[:n5]) / n5, 1)
+                    break
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
     return None, None
 
 

@@ -24,6 +24,9 @@ Scripts/strategies/.store/
 Live Classes/**/*.txt
 Live Classes/**/*.pdf
 
+# Screener.in credentials (never commit)
+screener_credentials.json
+
 # OS files
 .DS_Store
 Thumbs.db
