@@ -32,6 +32,8 @@ interface StockChartProps {
   ma200?: ChartPoint[];
   upperEnvelope?: ChartPoint[];
   lowerEnvelope?: ChartPoint[];
+  pePoints?: ChartPoint[];   // PE ratio series — rendered on left axis
+  peMedian?: number | null;  // 5yr rolling median — shown as dashed price line
   markers?: TradeMarker[];
   height?: number;
   ticker?: string;
@@ -85,6 +87,8 @@ export function StockChart({
   ma200,
   upperEnvelope,
   lowerEnvelope,
+  pePoints,
+  peMedian,
   markers = [],
   height = 360,
   ticker,
@@ -180,6 +184,31 @@ export function StockChart({
       s.setData(upperEnvelope as LineData[]);
     }
 
+    if (pePoints?.length) {
+      chart.applyOptions({
+        leftPriceScale: { visible: true, borderColor: "#374151", textColor: "#f97316" },
+      });
+      const peSeries = chart.addSeries(LineSeries, {
+        priceScaleId: "left",
+        color: "#f97316",
+        lineWidth: 1,
+        lineStyle: LineStyle.Dotted,
+        title: "PE",
+      });
+      peSeries.setData(pePoints as LineData[]);
+
+      if (peMedian != null) {
+        peSeries.createPriceLine({
+          price: peMedian,
+          color: "#f97316",
+          lineWidth: 1,
+          lineStyle: LineStyle.Dashed,
+          title: "5Y Median",
+          axisLabelVisible: true,
+        });
+      }
+    }
+
     chart.timeScale().fitContent();
 
     const ro = new ResizeObserver(() => {
@@ -197,7 +226,7 @@ export function StockChart({
       chartRef.current = null;
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [prices, w52Low, w52High, ma200, upperEnvelope, lowerEnvelope, height]);
+  }, [prices, w52Low, w52High, ma200, upperEnvelope, lowerEnvelope, pePoints, peMedian, height]);
 
   // ── Effect 2: update markers only — never recreates the chart ─────────────
   useEffect(() => {

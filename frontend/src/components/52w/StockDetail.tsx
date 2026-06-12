@@ -1,11 +1,13 @@
 "use client";
 import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { StockChart, type ChartPoint, type TradeMarker } from "@/components/charts/StockChart";
 import { MetricCards, type MetricDef } from "@/components/52w/MetricCards";
 import { TradeLog } from "@/components/52w/TradeLog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { type StockDetail as StockDetailType } from "@/lib/types";
+import { api } from "@/lib/api";
 import { fmtCur, fmtPct, fmtNum, fmtDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -18,6 +20,12 @@ interface StockDetailProps {
 
 export function StockDetail({ data, years = "10" }: StockDetailProps) {
   const [timeRange, setTimeRange] = useState<TimeRange>("All");
+
+  const { data: peData } = useQuery({
+    queryKey: ["pe", data.ticker],
+    queryFn: () => api.fundamentals.pe(data.ticker, 10),
+    staleTime: 7 * 24 * 60 * 60 * 1000, // weekly — matches backend PE cache TTL
+  });
 
   const trades = data.trades ?? [];
   const openPos = data.open_positions ?? [];
@@ -76,6 +84,13 @@ export function StockDetail({ data, years = "10" }: StockDetailProps) {
     () => prices.filter((p) => p.ma200 != null).map((p) => ({ time: p.date, value: p.ma200! })),
     [prices]
   );
+
+  const pePoints: ChartPoint[] = useMemo(() => {
+    if (!peData?.pe_series?.length) return [];
+    return peData.pe_series
+      .filter((p) => !cutoffDate || p.date >= cutoffDate)
+      .map((p) => ({ time: p.date, value: p.pe }));
+  }, [peData, cutoffDate]);
 
   const markers: TradeMarker[] = useMemo(
     () => [
@@ -144,6 +159,8 @@ export function StockDetail({ data, years = "10" }: StockDetailProps) {
             w52Low={w52LowPoints}
             w52High={w52HighPoints}
             ma200={ma200Points}
+            pePoints={pePoints.length ? pePoints : undefined}
+            peMedian={peData?.median_5y ?? undefined}
             markers={markers}
             height={320}
             ticker={data.ticker}

@@ -48,6 +48,12 @@ export function EnvelopeStockDetail({ ticker, trades, envelopePct, years = "10" 
     staleTime: 1000 * 60 * 60,
   });
 
+  const { data: peData } = useQuery({
+    queryKey: ["pe", ticker],
+    queryFn: () => api.fundamentals.pe(ticker, 10),
+    staleTime: 7 * 24 * 60 * 60 * 1000,
+  });
+
   const skippedEntries = envelopeStocks?.stock_data?.[ticker]?.skipped_entries ?? [];
 
   // Metrics derived from trades
@@ -95,6 +101,13 @@ export function EnvelopeStockDetail({ ticker, trades, envelopePct, years = "10" 
       .filter((p) => p.ma200 != null && (!cutoffDate || p.date >= cutoffDate))
       .map((p) => ({ time: p.date, value: p.ma200! }));
   }, [ohlcv, cutoffDate]);
+
+  const pePoints: ChartPoint[] = useMemo(() => {
+    if (!peData?.pe_series?.length) return [];
+    return peData.pe_series
+      .filter((p) => !cutoffDate || p.date >= cutoffDate)
+      .map((p) => ({ time: p.date, value: p.pe }));
+  }, [peData, cutoffDate]);
 
   // Envelope bands computed client-side from MA200 + envelopePct
   const lowerEnvelope: ChartPoint[] = useMemo(() => {
@@ -185,6 +198,8 @@ export function EnvelopeStockDetail({ ticker, trades, envelopePct, years = "10" 
               ma200={ma200Points}
               lowerEnvelope={lowerEnvelope}
               upperEnvelope={upperEnvelope}
+              pePoints={pePoints.length ? pePoints : undefined}
+              peMedian={peData?.median_5y ?? undefined}
               markers={markers}
               height={320}
               ticker={ticker}

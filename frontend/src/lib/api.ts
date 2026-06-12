@@ -14,6 +14,8 @@ import type {
   PortfolioBacktestData,
   PipelineStatus,
   GridSearchStatus,
+  PeData,
+  FundamentalsData,
 } from "./types";
 
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -77,6 +79,15 @@ export const api = {
         r.json()
       );
     },
+  },
+
+  fundamentals: {
+    pe: (ticker: string, years: number = 5) =>
+      get<PeData>(`/api/fundamentals/pe/${encodeURIComponent(ticker)}?years=${years}`),
+    metrics: (ticker: string) =>
+      get<FundamentalsData>(`/api/fundamentals/metrics/${encodeURIComponent(ticker)}`),
+    config: () =>
+      get<Record<string, unknown>>("/api/fundamentals/config"),
   },
 
   gridSearch: {

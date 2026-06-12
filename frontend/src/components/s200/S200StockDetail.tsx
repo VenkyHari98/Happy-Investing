@@ -58,6 +58,12 @@ export function S200StockDetail({ data, currentRallies, years = "10" }: Props) {
     staleTime: 1000 * 60 * 60, // 1 hour — price data doesn't change mid-session
   });
 
+  const { data: peData } = useQuery({
+    queryKey: ["pe", data.ticker],
+    queryFn: () => api.fundamentals.pe(data.ticker, 10),
+    staleTime: 7 * 24 * 60 * 60 * 1000,
+  });
+
   const metricCards: MetricDef[] = [
     { label: "Total Rallies", value: m.total_rallies, variant: "accent" },
     { label: "Entered", value: m.entered },
@@ -91,6 +97,13 @@ export function S200StockDetail({ data, currentRallies, years = "10" }: Props) {
       .filter((p) => p.ma200 != null && (!cutoffDate || p.date >= cutoffDate))
       .map((p) => ({ time: p.date, value: p.ma200! }));
   }, [ohlcv, cutoffDate]);
+
+  const pePoints: ChartPoint[] = useMemo(() => {
+    if (!peData?.pe_series?.length) return [];
+    return peData.pe_series
+      .filter((p) => !cutoffDate || p.date >= cutoffDate)
+      .map((p) => ({ time: p.date, value: p.pe }));
+  }, [peData, cutoffDate]);
 
   // Markers: RS (rally base, amber), R (rally peak, purple), B (buy, green), S (sell, red), M (missed, grey)
   const markers: TradeMarker[] = useMemo(() => {
@@ -176,6 +189,8 @@ export function S200StockDetail({ data, currentRallies, years = "10" }: Props) {
             <StockChart
               prices={pricePoints}
               ma200={ma200Points}
+              pePoints={pePoints.length ? pePoints : undefined}
+              peMedian={peData?.median_5y ?? undefined}
               markers={markers}
               height={320}
               ticker={data.ticker}

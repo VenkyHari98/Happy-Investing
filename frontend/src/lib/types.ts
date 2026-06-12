@@ -430,6 +430,32 @@ export interface GridSearchStatus {
   error:        string;
 }
 
+// ── PE / Fundamentals ─────────────────────────────────────────────────────────
+
+export interface PePoint {
+  date: string;
+  pe: number;
+}
+
+export interface PeData {
+  ticker: string;
+  pe_series: PePoint[];
+  median_5y: number | null;
+  current_pe: number | null;
+}
+
+export interface FundamentalsData {
+  ticker: string;
+  roce: number | null;
+  roe: number | null;
+  de_ratio: number | null;
+  opm: number | null;
+  revenue_growth: number | null;
+  profit_growth: number | null;
+  is_financial_sector: boolean;
+  pledged_pct: number | null;
+}
+
 // ── 52W proximity status ──────────────────────────────────────────────────────
 
 export type ProximityStatus = "IN_ZONE" | "APPROACHING" | "NEAR" | "BEYOND";
