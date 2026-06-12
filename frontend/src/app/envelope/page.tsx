@@ -6,6 +6,7 @@ import { MetricCards, type MetricDef } from "@/components/52w/MetricCards";
 import { EnvelopeTradesTable } from "@/components/envelope/EnvelopeTradesTable";
 import { EnvelopeByStock } from "@/components/envelope/EnvelopeByStock";
 import { EnvelopeConfigPanel } from "@/components/envelope/EnvelopeConfigPanel";
+import { GridSearchPanel } from "@/components/envelope/GridSearchPanel";
 import { EnvelopeStockList } from "@/components/envelope/EnvelopeStockList";
 import { EnvelopeStockDetail } from "@/components/envelope/EnvelopeStockDetail";
 import { EnvelopeScannerTab } from "@/components/envelope/EnvelopeScannerTab";
@@ -169,6 +170,9 @@ export default function EnvelopePage() {
         runStatus={runStatus ?? null}
         onRun={handleRun}
       />
+
+      {/* Grid search panel — parameter sweep with live SSE results */}
+      <GridSearchPanel years={horizon} />
 
       {/* Sub-tabs */}
       <Tabs defaultValue="scanner" className="flex flex-col flex-1 overflow-hidden">

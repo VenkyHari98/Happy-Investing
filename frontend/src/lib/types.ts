@@ -403,6 +403,33 @@ export interface EnvelopeStockData {
   stock_data: Record<string, EnvelopeStockItem>;
 }
 
+// ── Grid Search ───────────────────────────────────────────────────────────────
+
+export interface GridSearchResult {
+  cagr:         number;
+  total_return: number;
+  env_pct:      number;
+  zone_pct:     number;
+  alloc_large:  number;
+  alloc_mid:    number;
+  alloc_small:  number;
+  exit_mode:    string;
+  pyramid:      boolean;
+  trades:       number;
+  win_rate:     number;
+  max_dd:       number;
+  time_in_mkt:  number;
+}
+
+export interface GridSearchStatus {
+  running:      boolean;
+  n_done:       number;
+  n_total:      number;
+  started_at:   string;
+  completed_at: string;
+  error:        string;
+}
+
 // ── 52W proximity status ──────────────────────────────────────────────────────
 
 export type ProximityStatus = "IN_ZONE" | "APPROACHING" | "NEAR" | "BEYOND";

@@ -13,6 +13,7 @@ import type {
   OhlcvPoint,
   PortfolioBacktestData,
   PipelineStatus,
+  GridSearchStatus,
 } from "./types";
 
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -76,5 +77,27 @@ export const api = {
         r.json()
       );
     },
+  },
+
+  gridSearch: {
+    status: () => get<GridSearchStatus>("/api/grid-search/status"),
+    run: (params: {
+      env_pct_min?: number;
+      env_pct_max?: number;
+      zone_pct_min?: number;
+      zone_pct_max?: number;
+      years?: number;
+    }) => {
+      const p = new URLSearchParams();
+      if (params.env_pct_min  != null) p.set("env_pct_min",  String(params.env_pct_min));
+      if (params.env_pct_max  != null) p.set("env_pct_max",  String(params.env_pct_max));
+      if (params.zone_pct_min != null) p.set("zone_pct_min", String(params.zone_pct_min));
+      if (params.zone_pct_max != null) p.set("zone_pct_max", String(params.zone_pct_max));
+      if (params.years        != null) p.set("years",        String(params.years));
+      return fetch(`${BASE}/api/grid-search/run?${p}`, { method: "POST" }).then((r) => r.json());
+    },
+    stop: () =>
+      fetch(`${BASE}/api/grid-search/stop`, { method: "POST" }).then((r) => r.json()),
+    streamUrl: () => `${BASE}/api/grid-search/stream`,
   },
 };

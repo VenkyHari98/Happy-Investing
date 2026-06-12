@@ -10,7 +10,7 @@ Dashboard (existing) still runs on :8080 via:
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .routes import scanner, backtest, portfolio, pipeline, ohlcv
+from .routes import scanner, backtest, portfolio, pipeline, ohlcv, grid_search
 
 app = FastAPI(
     title="Happy Investing API",
@@ -29,7 +29,8 @@ app.include_router(scanner.router,   prefix="/api/scanner",   tags=["Scanner"])
 app.include_router(backtest.router,  prefix="/api/backtest",  tags=["Backtest"])
 app.include_router(portfolio.router, prefix="/api/portfolio", tags=["Portfolio"])
 app.include_router(pipeline.router,  prefix="/api/pipeline",  tags=["Pipeline"])
-app.include_router(ohlcv.router,     prefix="/api/ohlcv",     tags=["OHLCV"])
+app.include_router(ohlcv.router,       prefix="/api/ohlcv",        tags=["OHLCV"])
+app.include_router(grid_search.router, prefix="/api/grid-search",  tags=["GridSearch"])
 
 
 @app.get("/", include_in_schema=False)
