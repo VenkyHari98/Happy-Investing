@@ -8,20 +8,18 @@ backtesting (52W Low→High, Envelope, S200 Rally, ABCD Averaging), and portfoli
 simulations with configurable allocation tiers.
 
 ## Current Architecture
-Two layers (migration to three layers is planned but not yet implemented):
-- `Scripts/strategies/` — Python strategy code (backtest engines, scanners, data cache). **DO NOT MODIFY during migration.** Production-tested, contains all business logic.
-- `web/` — Static frontend (vanilla JS + HTML + CSS) served by a Python HTTP server.
+Three layers — fully migrated, `web/` is legacy and no longer the target:
+- `Scripts/strategies/` — Python strategy engine (backtest engines, scanners, data cache). **DO NOT MODIFY.** Production-tested, contains all business logic.
+- `backend/` — FastAPI wrapper (`backend/api/`) that imports engine modules from `Scripts/strategies/`. Runs on port 8000.
+- `frontend/` — Next.js + TypeScript + Tailwind CSS v4 + Shadcn UI + TanStack Query. Runs on port 3000.
 
-Planned target (not yet built):
-- `engine/` ← rename of `Scripts/strategies/`
-- `backend/` ← FastAPI wrapper importing engine modules
-- `frontend/` ← Next.js 16 + Shadcn UI replacing `web/`
+Legacy (do not use for new work):
+- `web/` — Old static frontend (vanilla JS + HTML + CSS) served by Python's `http.server` on port 8080. Still needed to generate pipeline data via `web/start_dashboard.py --data-only`.
 
 ## Tech Stack
-- Backend: Python 3.11+, yfinance 0.2.58, pandas 2.2.3, numpy 1.26.4
-- Frontend (current): Vanilla JS, HTML, CSS (dark theme), served by Python's `http.server`
-- Frontend (target): Next.js 16, TypeScript, Tailwind CSS v4, Shadcn UI, TanStack Query
-- Charts (target): TradingView Lightweight Charts
+- Backend: Python 3.11+, FastAPI, yfinance 0.2.58, pandas 2.2.3, numpy 1.26.4
+- Frontend: Next.js, TypeScript, Tailwind CSS v4, Shadcn UI, TanStack Query
+- Charts: TradingView Lightweight Charts v5
 - No database — file-based cache (pickle in `Scripts/strategies/.cache/`) + JSON outputs
 
 ## Key Data Classes
@@ -44,8 +42,8 @@ Planned target (not yet built):
 2. PE series from quarterly+annual income statements → weekly cached .pkl
 3. Fundamental metrics (ROCE, ROE, D/E, OPM, etc.) → weekly cached .pkl
 4. Strategy scripts → JSON outputs in `Source Data/Downloaded Data/`
-5. `web/build_data.py` copies JSON outputs → `web/data/`
-6. `web/start_dashboard.py` serves `web/` as static site on port 8080
+5. `web/start_dashboard.py --data-only` triggers the pipeline (writes JSON)
+6. FastAPI backend reads JSON outputs directly; frontend fetches via REST
 
 ## File-Based Caching (Scripts/strategies/)
 - `.cache/` dir: daily OHLCV pkl, weekly PE pkl, weekly fundamentals pkl
@@ -53,23 +51,34 @@ Planned target (not yet built):
 - Cache keys include date/week to auto-expire: `{TICKER}_{years}y_{YYYYMMDD}.pkl`
 - All caches use `pickle` — not JSON
 
-## API Endpoints (target — not yet implemented)
+## API Endpoints (all implemented in `backend/api/routes/`)
 ```
-GET  /api/scanner/f40              → Current F40 opportunity scanner results
-GET  /api/scanner/s200             → S200 20% rally scanner results
-GET  /api/backtest/52w?years=10    → 52W backtest summary + per-stock trades
-GET  /api/backtest/envelope        → Envelope backtest with tunable params
-GET  /api/portfolio/f40            → Portfolio-level backtest (6 variants)
-GET  /api/portfolio/s200           → S200 portfolio backtest
-GET  /api/ohlcv/{ticker}           → OHLCV price data for charts
-GET  /api/pe/{ticker}              → PE ratio daily series + 5yr median
-GET  /api/metrics/{ticker}         → Fundamental metrics dict
-GET  /api/config/fundamental       → Current fundamental_config.py values
-GET  /api/pipeline/status          → {running, completed_at, run_date, error}
-POST /api/pipeline/refresh         → Trigger background data refresh
-SSE  /api/grid-search/stream       → Envelope grid search live progress
-POST /api/grid-search/stop         → Cancel running grid search
-POST /api/backtest/envelope/run    → On-demand envelope backtest with params
+GET  /api/scanner/f40                     → Current F40 opportunity scanner results
+GET  /api/scanner/f40/summary             → F40 scanner summary (run_date, counts)
+GET  /api/scanner/s200                    → S200 20% rally scanner results
+GET  /api/backtest/52w/summary            → 52W backtest summary
+GET  /api/backtest/52w/stocks             → 52W per-stock data
+GET  /api/backtest/envelope/summary       → Envelope backtest summary
+GET  /api/backtest/envelope/trades        → Envelope trade list
+GET  /api/backtest/envelope/stocks        → Envelope per-stock data
+POST /api/backtest/envelope/run           → On-demand envelope backtest with params
+GET  /api/backtest/envelope/run_status    → Envelope on-demand run status
+GET  /api/backtest/s200/summary           → S200 rally backtest summary
+GET  /api/backtest/s200/stocks            → S200 per-stock data
+GET  /api/backtest/s200/stock/{ticker}    → Single-stock S200 detail
+GET  /api/portfolio/f40                   → F40 portfolio backtest (6 variants)
+GET  /api/portfolio/f40/variants          → List available F40 variant names
+GET  /api/portfolio/s200                  → S200 portfolio backtest
+GET  /api/ohlcv/{ticker}                  → OHLCV price data for charts
+GET  /api/fundamentals/pe/{ticker}        → PE ratio daily series + 5yr rolling median
+GET  /api/fundamentals/metrics/{ticker}   → Fundamental metrics (ROCE, ROE, D/E, OPM…)
+GET  /api/fundamentals/config             → Current fundamental_config.py thresholds
+GET  /api/pipeline/status                 → {running, completed_at, run_date, error}
+POST /api/pipeline/refresh                → Trigger background data refresh
+GET  /api/grid-search/stream              → SSE: envelope grid search live progress
+POST /api/grid-search/run                 → Start envelope parameter grid search
+POST /api/grid-search/stop                → Cancel running grid search
+GET  /api/grid-search/status              → Grid search progress (n_done, n_total)
 ```
 
 ## Watchlist Format
@@ -92,8 +101,8 @@ Banks, NBFCs, Insurance companies are treated specially:
 - All dates: ISO 8601 (YYYY-MM-DD) in JSON, pandas DatetimeIndex internally
 - yfinance ticker suffixes: `.NS` for NSE, `.BO` for BSE — try NS first, fallback to BO
 - PE values outside [1, 500] are noise — set to NaN
-- Frontend (target): functional React components, Tailwind utility classes, no class components
-- API responses (target): JSON with snake_case keys matching Python dataclass fields
+- Frontend: functional React components, Tailwind utility classes, no class components
+- API responses: JSON with snake_case keys matching Python dataclass fields
 
 ## Important Constraints
 - yfinance has rate limits — ALWAYS use `data_cache.py`, never call yfinance directly
@@ -103,23 +112,26 @@ Banks, NBFCs, Insurance companies are treated specially:
 - Grid search uses `ProcessPoolExecutor` for CPU parallelism (not thread)
 - Pickle files in `.cache/` and `.store/` are NOT committed to git — regenerated per machine
 
-## How to Run (current)
-```bash
-# One command — auto-detects if pipeline needs to run
-python web/start_dashboard.py
-# Opens at http://localhost:8080
+## How to Run
+```powershell
+# Both services in one command from repo root:
+.\start.ps1
+# Backend: http://localhost:8000  (FastAPI + /docs)
+# Frontend: http://localhost:3000
 
-# Force re-run pipeline even if data is fresh today
-python web/start_dashboard.py --force
+# Or manually:
+# Terminal 1 — backend
+cd backend; uvicorn api.main:app --reload --port 8000
 
-# Skip pipeline, serve existing data only
-python web/start_dashboard.py --serve-only
+# Terminal 2 — frontend
+cd frontend; npm run dev
+
+# Force pipeline data refresh (regenerates all JSON outputs):
+python web/start_dashboard.py --data-only --force
 ```
 
-## Frontend Pages (current state)
-1. **52W Low→High** — Opportunity scanner + stock detail chart + backtest trades
-2. **S200 20% Rally** — Rally opportunities + backtest metrics
-3. **Portfolio Overview** — Cross-strategy consolidated metrics
-4. *Envelope Strategy* — Data generated; UI tab pending
-5. *ABCD Averaging* — Pending
-6. *Combined Scanner* — Pending
+## Frontend Pages
+1. **52W Low→High** (`/52w`) — Scanner + Stock Analysis (chart + PE overlay + trades) + Portfolio Backtest
+2. **Envelope** (`/envelope`) — Scanner + Trade Log + By Stock + Stock Analysis + Portfolio Backtest + Grid Search
+3. **S200 20% Rally** (`/s200`) — Scanner + Stock Analysis + Backtest + Portfolio Backtest
+4. **Multi-Strategy Scanner** (`/scanner`) — Combined F40 52W + S200 signals with unified status/filter view
