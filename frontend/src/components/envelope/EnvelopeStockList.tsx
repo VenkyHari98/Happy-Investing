@@ -11,6 +11,7 @@ import {
 import type { EnvelopeTrade } from "@/lib/types";
 import { fmtPct, fmtNum } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { Tip } from "@/components/ui/tooltip";
 
 interface StockRow {
   ticker: string;
@@ -103,13 +104,19 @@ export function EnvelopeStockList({ trades, selectedTicker, onSelect }: Props) {
             </div>
             <div className="text-xs text-muted-foreground mt-0.5 truncate">{r.sector}</div>
             <div className="flex gap-3 mt-0.5 text-xs">
-              <span className="text-muted-foreground">{r.trades}T</span>
-              <span className={cn("font-medium", r.win_rate >= 70 ? "text-green-400" : "text-amber-400")}>
-                {fmtNum(r.win_rate)}%WR
-              </span>
-              <span className={cn(r.avg_pnl >= 0 ? "text-green-400" : "text-red-400")}>
-                {fmtPct(r.avg_pnl)}
-              </span>
+              <Tip content={`${r.trades} completed envelope trade${r.trades !== 1 ? "s" : ""} in the backtest`}>
+                <span className="text-muted-foreground">{r.trades}T</span>
+              </Tip>
+              <Tip content="Win rate: % of completed trades that closed profitably">
+                <span className={cn("font-medium", r.win_rate >= 70 ? "text-green-400" : "text-amber-400")}>
+                  {fmtNum(r.win_rate)}%WR
+                </span>
+              </Tip>
+              <Tip content="Average % return per completed trade">
+                <span className={cn(r.avg_pnl >= 0 ? "text-green-400" : "text-red-400")}>
+                  {fmtPct(r.avg_pnl)}
+                </span>
+              </Tip>
             </div>
           </button>
         ))}

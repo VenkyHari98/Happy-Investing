@@ -16,6 +16,10 @@ import type {
   GridSearchStatus,
   PeData,
   FundamentalsData,
+  RHSScannerData,
+  RHSBacktestSummary,
+  RHSBacktestStockData,
+  RHSStockDetail,
 } from "./types";
 
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -88,6 +92,13 @@ export const api = {
       get<FundamentalsData>(`/api/fundamentals/metrics/${encodeURIComponent(ticker)}`),
     config: () =>
       get<Record<string, unknown>>("/api/fundamentals/config"),
+  },
+
+  rhs: {
+    scanner: () => get<RHSScannerData>("/api/rhs/scanner"),
+    summary: () => get<RHSBacktestSummary>("/api/rhs/summary"),
+    stocks: () => get<RHSBacktestStockData>("/api/rhs/stocks"),
+    stockDetail: (ticker: string) => get<RHSStockDetail>(`/api/rhs/stock/${encodeURIComponent(ticker)}`),
   },
 
   gridSearch: {

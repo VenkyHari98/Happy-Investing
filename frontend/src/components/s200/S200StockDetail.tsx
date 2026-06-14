@@ -11,9 +11,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { MetricCards, type MetricDef } from "@/components/52w/MetricCards";
 import { StockChart, type ChartPoint, type TradeMarker } from "@/components/charts/StockChart";
 import type { S200StockDetailData, S200Rally, S200Status } from "@/lib/types";
+import { Tip } from "@/components/ui/tooltip";
 import { api } from "@/lib/api";
 import { fmtPct, fmtNum, fmtDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -26,6 +26,7 @@ const STATUS_COLORS: Record<S200Status, string> = {
   WATCHING_NEAR: "bg-blue-500/20 text-blue-400 border-blue-500/30",
   WATCHING: "bg-muted text-muted-foreground border-border",
   BELOW_BUY: "bg-rose-500/20 text-rose-400 border-rose-500/30",
+  ABOVE_DMA: "bg-muted/50 text-muted-foreground/60 border-border/50",
 };
 
 const STATUS_LABELS: Record<S200Status, string> = {
@@ -34,6 +35,7 @@ const STATUS_LABELS: Record<S200Status, string> = {
   WATCHING_NEAR: "Near",
   WATCHING: "Watching",
   BELOW_BUY: "Below Buy",
+  ABOVE_DMA: "Above 200 DMA",
 };
 
 const OUTCOME_COLORS: Record<string, string> = {
@@ -64,16 +66,6 @@ export function S200StockDetail({ data, currentRallies, years = "10" }: Props) {
     staleTime: 7 * 24 * 60 * 60 * 1000,
   });
 
-  const metricCards: MetricDef[] = [
-    { label: "Total Rallies", value: m.total_rallies, variant: "accent" },
-    { label: "Entered", value: m.entered },
-    { label: "Won (Target Hit)", value: m.target_hit, variant: "green" },
-    { label: "Expired", value: m.expired, variant: m.expired > 0 ? "red" : "default" },
-    { label: "Zone Entry Rate", value: fmtNum(m.zone_entry_rate_pct) + "%", variant: "amber" },
-    { label: "Win Rate", value: fmtNum(m.win_rate_pct) + "%", variant: m.win_rate_pct >= 70 ? "green" : "amber" },
-    { label: "Avg P/L", value: fmtPct(m.avg_pnl_pct), variant: m.avg_pnl_pct >= 0 ? "green" : "red" },
-    { label: "Avg Days in Trade", value: `${Math.round(m.avg_days_in_trade)}d` },
-  ];
 
   // Time range cutoff
   const cutoffDate = useMemo(() => {
@@ -145,8 +137,30 @@ export function S200StockDetail({ data, currentRallies, years = "10" }: Props) {
         <Badge variant="secondary" className="text-xs ml-auto">{data.watchlist_source}</Badge>
       </div>
 
-      {/* Metric cards */}
-      <MetricCards metrics={metricCards} />
+      {/* Compact stat strip */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs -mt-1">
+        <span className="text-muted-foreground">
+          <span className="text-foreground font-medium tabular-nums">{m.total_rallies}</span> rallies
+        </span>
+        <span className="text-muted-foreground">
+          <span className="font-medium tabular-nums">{m.entered}</span> entered
+        </span>
+        <span className="text-muted-foreground">
+          <span className="text-green-400 font-medium tabular-nums">{m.target_hit}</span> won
+        </span>
+        <span className="text-muted-foreground">
+          Zone entry <span className="text-amber-400 font-medium">{fmtNum(m.zone_entry_rate_pct)}%</span>
+        </span>
+        <span className="text-muted-foreground">
+          WR <span className={cn("font-medium", m.win_rate_pct >= 70 ? "text-green-400" : "text-amber-400")}>{fmtNum(m.win_rate_pct)}%</span>
+        </span>
+        <span className="text-muted-foreground">
+          Avg P/L <span className={cn("font-medium", m.avg_pnl_pct >= 0 ? "text-green-400" : "text-red-400")}>{fmtPct(m.avg_pnl_pct)}</span>
+        </span>
+        <span className="text-muted-foreground">
+          Hold <span className="font-medium">{Math.round(m.avg_days_in_trade)}d</span>
+        </span>
+      </div>
 
       {/* Chart */}
       <Card>
@@ -155,27 +169,42 @@ export function S200StockDetail({ data, currentRallies, years = "10" }: Props) {
             <CardTitle className="text-sm font-medium text-muted-foreground">
               Price · 200 SMA
               <span className="ml-3 text-[10px] space-x-3">
-                <span className="text-amber-400">■ RS = Rally base (start)</span>
-                <span className="text-purple-400">■ R = Rally peak (end)</span>
-                <span className="text-green-400">■ B = Buy entry (retest)</span>
-                <span className="text-red-400">■ S = Sell exit (target)</span>
-                <span className="text-gray-500">● M = Missed (not entered)</span>
+                <Tip content="The low from which the 20%+ rally began — the anchor for the buy zone">
+                  <span className="text-amber-400 cursor-default">■ RS = Rally base (start)</span>
+                </Tip>
+                <Tip content="Where the original rally peaked — sets the target price for the strategy">
+                  <span className="text-purple-400 cursor-default">■ R = Rally peak (end)</span>
+                </Tip>
+                <Tip content="Strategy bought here — price came back and retested the rally base (buy zone)">
+                  <span className="text-green-400 cursor-default">■ B = Buy entry (retest)</span>
+                </Tip>
+                <Tip content="Strategy sold here — price reached the full rally target">
+                  <span className="text-red-400 cursor-default">■ S = Sell exit (target)</span>
+                </Tip>
+                <Tip content="The setup triggered (price entered buy zone) but the strategy did not enter — usually because a position was already open">
+                  <span className="text-gray-500 cursor-default">● M = Missed (not entered)</span>
+                </Tip>
               </span>
             </CardTitle>
             <div className="flex gap-1 border border-border rounded p-0.5">
               {(["1Y", "3Y", "All"] as TimeRange[]).map((r) => (
-                <button
+                <Tip
                   key={r}
-                  onClick={() => setTimeRange(r)}
-                  className={cn(
-                    "px-2 py-0.5 text-xs rounded transition-colors",
-                    timeRange === r
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
+                  content={r === "1Y" ? "Show last 1 year of price history" : r === "3Y" ? "Show last 3 years of price history" : "Show full available history"}
+                  below
                 >
-                  {r}
-                </button>
+                  <button
+                    onClick={() => setTimeRange(r)}
+                    className={cn(
+                      "px-2 py-0.5 text-xs rounded transition-colors",
+                      timeRange === r
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    {r}
+                  </button>
+                </Tip>
               ))}
             </div>
           </div>
@@ -192,7 +221,7 @@ export function S200StockDetail({ data, currentRallies, years = "10" }: Props) {
               pePoints={pePoints.length ? pePoints : undefined}
               peMedian={peData?.median_5y ?? undefined}
               markers={markers}
-              height={320}
+              height={500}
               ticker={data.ticker}
             />
           )}
@@ -274,15 +303,15 @@ export function S200StockDetail({ data, currentRallies, years = "10" }: Props) {
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
                   <TableHead>Rally Period</TableHead>
-                  <TableHead className="text-right">Rally %</TableHead>
-                  <TableHead className="text-right">Candles</TableHead>
-                  <TableHead>Buy Zone</TableHead>
-                  <TableHead>Entry Date</TableHead>
-                  <TableHead>Exit Date</TableHead>
-                  <TableHead className="text-right">Days</TableHead>
-                  <TableHead className="text-right">P/L %</TableHead>
-                  <TableHead className="text-right">Max DD %</TableHead>
-                  <TableHead>Outcome</TableHead>
+                  <TableHead className="text-right"><Tip content="Size of the original 20%+ rally" below><span className="cursor-default">Rally %</span></Tip></TableHead>
+                  <TableHead className="text-right"><Tip content="Number of trading days the rally spanned from base to peak" below><span className="cursor-default">Candles</span></Tip></TableHead>
+                  <TableHead><Tip content="The price range for buy entries on the retest of the rally base" below><span className="cursor-default">Buy Zone</span></Tip></TableHead>
+                  <TableHead><Tip content="Date the strategy entered the trade (price retested the buy zone)" below><span className="cursor-default">Entry Date</span></Tip></TableHead>
+                  <TableHead><Tip content="Date the strategy exited" below><span className="cursor-default">Exit Date</span></Tip></TableHead>
+                  <TableHead className="text-right"><Tip content="Days from entry to exit" below><span className="cursor-default">Days</span></Tip></TableHead>
+                  <TableHead className="text-right"><Tip content="% return on this trade" below><span className="cursor-default">P/L %</span></Tip></TableHead>
+                  <TableHead className="text-right"><Tip content="Maximum intra-trade drawdown — how far the price fell below entry before recovering" below><span className="cursor-default">Max DD %</span></Tip></TableHead>
+                  <TableHead><Tip content="How the trade ended: TARGET_HIT = success, EXPIRED = setup lapsed, NOT_ENTERED = price never came back" below><span className="cursor-default">Outcome</span></Tip></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>

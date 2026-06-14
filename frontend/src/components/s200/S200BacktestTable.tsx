@@ -12,6 +12,7 @@ import {
 import type { S200StockOverview } from "@/lib/types";
 import { fmtPct, fmtNum } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { Tip } from "@/components/ui/tooltip";
 
 type SortKey =
   | "ticker"
@@ -50,34 +51,39 @@ export function S200BacktestTable({ overview }: Props) {
     else { setSortKey(key); setSortDir("desc"); }
   }
 
-  function SortHead({ col, label, className }: { col: SortKey; label: string; className?: string }) {
+  function SortHead({ col, label, className, tip }: { col: SortKey; label: string; className?: string; tip?: string }) {
     const active = sortKey === col;
     return (
       <TableHead
         className={cn("cursor-pointer select-none hover:text-foreground", className)}
         onClick={() => toggleSort(col)}
       >
-        {label} {active ? (sortDir === "asc" ? "↑" : "↓") : ""}
+        {tip ? (
+          <Tip content={tip} below>
+            <span className="cursor-default">{label}</span>
+          </Tip>
+        ) : label}
+        {active ? (sortDir === "asc" ? " ↑" : " ↓") : ""}
       </TableHead>
     );
   }
 
   return (
-    <div className="rounded-md border border-border overflow-auto">
+    <div className="rounded-md border border-border">
       <Table>
         <TableHeader>
           <TableRow className="hover:bg-transparent">
             <SortHead col="ticker" label="Ticker" />
             <TableHead>Cap</TableHead>
             <TableHead>Source</TableHead>
-            <SortHead col="total_rallies" label="Rallies" className="text-right" />
-            <SortHead col="entered" label="Entered" className="text-right" />
-            <SortHead col="target_hit" label="Won" className="text-right" />
-            <SortHead col="zone_entry_rate_pct" label="Entry Rate" className="text-right" />
-            <SortHead col="win_rate_pct" label="Win Rate" className="text-right" />
-            <SortHead col="avg_pnl_pct" label="Avg P/L%" className="text-right" />
-            <SortHead col="avg_days_in_trade" label="Avg Days" className="text-right" />
-            <TableHead className="text-right">Max DD%</TableHead>
+            <SortHead col="total_rallies" label="Rallies" className="text-right" tip="Total 20%+ rally setups detected for this stock" />
+            <SortHead col="entered" label="Entered" className="text-right" tip="Rallies where the price retested the buy zone and a trade was placed" />
+            <SortHead col="target_hit" label="Won" className="text-right" tip="Entered trades that hit the full target" />
+            <SortHead col="zone_entry_rate_pct" label="Entry Rate" className="text-right" tip="% of detected rallies where the price actually entered the buy zone" />
+            <SortHead col="win_rate_pct" label="Win Rate" className="text-right" tip="% of entered trades that hit the target — the key performance metric" />
+            <SortHead col="avg_pnl_pct" label="Avg P/L%" className="text-right" tip="Average % return per entered trade" />
+            <SortHead col="avg_days_in_trade" label="Avg Days" className="text-right" tip="Average holding period in calendar days" />
+            <TableHead className="text-right"><Tip content="Worst intra-trade drawdown across all trades for this stock" below><span className="cursor-default">Max DD%</span></Tip></TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>

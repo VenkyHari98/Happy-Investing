@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/select";
 import { type StockOverview, type ScannerRow, getProximityStatus } from "@/lib/types";
 import { fmtCur } from "@/lib/format";
+import { Tip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 interface StockListProps {
@@ -116,9 +117,13 @@ export function StockList({ overview, scannerRows, selectedTicker, onSelect }: S
               <div className="flex items-center justify-between">
                 <span className="font-mono font-semibold text-sm text-primary">{s.ticker}</span>
                 <div className="flex items-center gap-1.5">
-                  <span className="text-xs text-muted-foreground">{s.trades_count}T</span>
+                  <Tip content={`${s.trades_count} completed trade${s.trades_count !== 1 ? "s" : ""} in the backtest`}>
+                    <span className="text-xs text-muted-foreground">{s.trades_count}T</span>
+                  </Tip>
                   {s.open_count > 0 && (
-                    <span className={cn("w-1.5 h-1.5 rounded-full", dotColor)} />
+                    <Tip content={`${s.open_count} open position${s.open_count !== 1 ? "s" : ""} — bought but target not yet reached`}>
+                      <span className={cn("w-1.5 h-1.5 rounded-full", dotColor)} />
+                    </Tip>
                   )}
                 </div>
               </div>

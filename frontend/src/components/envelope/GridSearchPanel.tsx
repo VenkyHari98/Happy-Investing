@@ -3,6 +3,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { Tip } from "@/components/ui/tooltip";
 import { api } from "@/lib/api";
 import type { GridSearchResult, GridSearchStatus } from "@/lib/types";
 
@@ -121,7 +122,9 @@ export function GridSearchPanel({ years }: Props) {
     <div className="px-6 py-2 border-b border-border shrink-0">
       {/* Collapsed header */}
       <div className="flex items-center gap-3 text-xs">
-        <span className="text-muted-foreground font-medium">Grid Search:</span>
+        <Tip content="Automatically test hundreds of envelope/zone % combinations to find the settings that produce the best CAGR" below>
+          <span className="text-muted-foreground font-medium cursor-default">Grid Search:</span>
+        </Tip>
 
         {isRunning ? (
           <>
@@ -132,9 +135,9 @@ export function GridSearchPanel({ years }: Props) {
           </>
         ) : hasPrior ? (
           <>
-            <Badge variant="outline" className="text-xs">Env {envMin}–{envMax}%</Badge>
-            <Badge variant="outline" className="text-xs">Zone {zoneMin}–{zoneMax}%</Badge>
-            <span className="text-muted-foreground/60 text-[10px]">{n_done.toLocaleString()} combos tested</span>
+            <Tip content="Envelope % range used in this grid search" below><Badge variant="outline" className="text-xs">Env {envMin}–{envMax}%</Badge></Tip>
+            <Tip content="Zone % range used in this grid search" below><Badge variant="outline" className="text-xs">Zone {zoneMin}–{zoneMax}%</Badge></Tip>
+            <Tip content="Total parameter combinations tested in this run" below><span className="text-muted-foreground/60 text-[10px] cursor-default">{n_done.toLocaleString()} combos tested</span></Tip>
           </>
         ) : (
           <span className="text-muted-foreground/60 text-[10px]">Not yet run this session</span>
@@ -186,7 +189,9 @@ export function GridSearchPanel({ years }: Props) {
             <div className="flex flex-wrap items-end gap-4">
               {/* Env% range */}
               <div className="flex flex-col gap-1">
-                <span className="text-xs text-muted-foreground">Envelope % range</span>
+                <Tip content="Min and max envelope % to test. Each step is 1%. Keep range tight to avoid long run times">
+                  <span className="text-xs text-muted-foreground cursor-default">Envelope % range</span>
+                </Tip>
                 <div className="flex items-center gap-1.5">
                   <input
                     type="number" min={1} max={30} step={1} value={envMin}
@@ -206,7 +211,9 @@ export function GridSearchPanel({ years }: Props) {
 
               {/* Zone% range */}
               <div className="flex flex-col gap-1">
-                <span className="text-xs text-muted-foreground">Zone % range</span>
+                <Tip content="Min and max zone % to test. Each step is 0.5%">
+                  <span className="text-xs text-muted-foreground cursor-default">Zone % range</span>
+                </Tip>
                 <div className="flex items-center gap-1.5">
                   <input
                     type="number" min={0} max={10} step={0.5} value={zoneMin}
@@ -226,7 +233,9 @@ export function GridSearchPanel({ years }: Props) {
 
               {/* Alloc (read-only) */}
               <div className="flex flex-col gap-1">
-                <span className="text-xs text-muted-foreground">Alloc sweep</span>
+                <Tip content="Position sizes are also swept across this range for each combo — total combos = env steps × zone steps × alloc combos">
+                  <span className="text-xs text-muted-foreground cursor-default">Alloc sweep</span>
+                </Tip>
                 <div className="flex gap-1 flex-wrap">
                   {[["L", "3–5%"], ["M", "2–3.5%"], ["S", "1.5–2.5%"]].map(([cap, range]) => (
                     <span key={cap} className="text-xs border border-border rounded px-1.5 py-0.5 text-muted-foreground">
@@ -262,13 +271,28 @@ export function GridSearchPanel({ years }: Props) {
           <table className="text-xs w-full">
             <thead>
               <tr className="text-muted-foreground border-b border-border">
-                {["#", "CAGR%", "Env%", "Zone%", "Large%", "Mid%", "Small%", "Exit", "Pyramid", "Trades", "Win%", "MaxDD%"].map(
-                  (h, i) => (
+                {[
+                  { h: "#", tip: "" },
+                  { h: "CAGR%", tip: "Compound Annual Growth Rate for this parameter combination — higher is better" },
+                  { h: "Env%", tip: "The envelope width tested" },
+                  { h: "Zone%", tip: "The entry band width tested" },
+                  { h: "Large%", tip: "Large Cap position size used in this combination" },
+                  { h: "Mid%", tip: "Mid Cap position size used in this combination" },
+                  { h: "Small%", tip: "Small Cap position size used in this combination" },
+                  { h: "Exit", tip: "Exit method tested (upper envelope vs 200 SMA mean reversion)" },
+                  { h: "Pyramid", tip: "Whether pyramiding (multi-tranche averaging) was enabled" },
+                  { h: "Trades", tip: "Number of trades generated with these settings" },
+                  { h: "Win%", tip: "Win rate with these settings" },
+                  { h: "MaxDD%", tip: "Maximum drawdown — bigger negative = more risk" },
+                ].map(({ h, tip }, i) => (
                     <th key={h} className={cn("pb-1 pr-3", i > 0 ? "text-right" : "text-left")}>
-                      {h}
+                      {tip ? (
+                        <Tip content={tip} below>
+                          <span className="cursor-default">{h}</span>
+                        </Tip>
+                      ) : h}
                     </th>
-                  )
-                )}
+                  ))}
               </tr>
             </thead>
             <tbody>

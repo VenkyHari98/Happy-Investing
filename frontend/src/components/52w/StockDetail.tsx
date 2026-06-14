@@ -2,10 +2,10 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { StockChart, type ChartPoint, type TradeMarker } from "@/components/charts/StockChart";
-import { MetricCards, type MetricDef } from "@/components/52w/MetricCards";
 import { TradeLog } from "@/components/52w/TradeLog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Tip } from "@/components/ui/tooltip";
 import { type StockDetail as StockDetailType } from "@/lib/types";
 import { api } from "@/lib/api";
 import { fmtCur, fmtPct, fmtNum, fmtDate } from "@/lib/format";
@@ -39,19 +39,6 @@ export function StockDetail({ data, years = "10" }: StockDetailProps) {
     : 0;
   const bestTrade = trades.length ? Math.max(...trades.map((t) => t.pnl_pct)) : null;
 
-  const metrics: MetricDef[] = [
-    { label: "Completed Trades", value: trades.length, variant: "accent" },
-    { label: "Open Positions", value: openPos.length, variant: openPos.length ? "amber" : "default" },
-    { label: "Win Rate", value: `${winRate.toFixed(1)}%`, variant: "green" },
-    { label: "Total P/L", value: fmtCur(data.total_pnl), variant: data.total_pnl >= 0 ? "green" : "red" },
-    { label: "Avg Trade P/L", value: fmtPct(avgPnl), variant: avgPnl >= 0 ? "green" : "red" },
-    { label: "Best Trade", value: fmtPct(bestTrade), variant: "green" },
-    { label: "Avg Duration", value: avgDur ? `${Math.round(avgDur)}d` : "—" },
-    { label: "Latest Close", value: fmtCur(data.latest_close) },
-    { label: "Current PE", value: data.pe_current != null ? fmtNum(data.pe_current) + "x" : "—" },
-    { label: "3Yr Avg PE", value: data.pe_3yr_avg != null ? fmtNum(data.pe_3yr_avg) + "x" : "—", sub: "3yr historical" },
-    { label: "5Yr Avg PE", value: data.pe_5yr_avg != null ? fmtNum(data.pe_5yr_avg) + "x" : "—", sub: "5yr historical" },
-  ];
 
   // Build chart series — filter by time range
   const allPrices = data.prices ?? [];
@@ -114,13 +101,41 @@ export function StockDetail({ data, years = "10" }: StockDetailProps) {
         <h2 className="text-xl font-semibold font-mono text-primary">{data.ticker}</h2>
         <Badge variant="outline">{data.cap_tier?.replace(" Cap", "")}</Badge>
         <span className="text-sm text-muted-foreground">{data.sector}</span>
-        <span className="text-sm text-muted-foreground ml-auto">
-          as of {fmtDate(data.latest_date)}
-        </span>
+        <span className="text-xs text-muted-foreground ml-auto">as of {fmtDate(data.latest_date)}</span>
       </div>
 
-      {/* Metrics */}
-      <MetricCards metrics={metrics} />
+      {/* Compact stat strip */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs -mt-1">
+        <span className="text-muted-foreground">
+          <span className="text-foreground font-medium tabular-nums">{trades.length}</span> trades
+        </span>
+        {openPos.length > 0 && (
+          <span className="text-amber-400 font-medium">{openPos.length} open</span>
+        )}
+        <span className="text-muted-foreground">
+          WR <span className={cn("font-medium", winRate >= 60 ? "text-green-400" : "text-amber-400")}>{winRate.toFixed(1)}%</span>
+        </span>
+        <span className="text-muted-foreground">
+          Avg P/L <span className={cn("font-medium", avgPnl >= 0 ? "text-green-400" : "text-red-400")}>{fmtPct(avgPnl)}</span>
+        </span>
+        <span className="text-muted-foreground">
+          Best <span className="text-green-400 font-medium">{fmtPct(bestTrade)}</span>
+        </span>
+        <span className="text-muted-foreground">
+          Hold <span className="font-medium">{avgDur ? `${Math.round(avgDur)}d` : "—"}</span>
+        </span>
+        <span className="ml-auto flex items-center gap-x-3 text-muted-foreground">
+          {data.pe_current != null && (
+            <span>PE <span className="font-medium text-foreground">{fmtNum(data.pe_current)}x</span></span>
+          )}
+          {data.pe_3yr_avg != null && (
+            <span>3yr <span className="font-medium">{fmtNum(data.pe_3yr_avg)}x</span></span>
+          )}
+          {data.pe_5yr_avg != null && (
+            <span>5yr <span className="font-medium">{fmtNum(data.pe_5yr_avg)}x</span></span>
+          )}
+        </span>
+      </div>
 
       {/* Chart */}
       <Card>
@@ -129,26 +144,37 @@ export function StockDetail({ data, years = "10" }: StockDetailProps) {
             <CardTitle className="text-sm font-medium text-muted-foreground">
               Price · 52W Low/High · 200 DMA
               <span className="ml-3 text-[10px] space-x-3">
-                <span className="text-green-400">■ B = Buy entry</span>
-                <span className="text-red-400">■ S = Sell (target hit)</span>
-                <span className="text-gray-500">● M = Missed (limit full)</span>
+                <Tip content="Strategy bought here — price touched the rolling 52-week low">
+                  <span className="text-green-400 cursor-default">■ B = Buy entry</span>
+                </Tip>
+                <Tip content="Strategy sold here — price reached the 52W high that was locked in at the time of buying">
+                  <span className="text-red-400 cursor-default">■ S = Sell (target hit)</span>
+                </Tip>
+                <Tip content="Stock touched the low again but was skipped — maximum positions for this stock were already open at the time">
+                  <span className="text-gray-500 cursor-default">● M = Missed (limit full)</span>
+                </Tip>
               </span>
             </CardTitle>
             {/* Time range buttons */}
             <div className="flex gap-1 border border-border rounded p-0.5">
               {(["1Y", "3Y", "All"] as TimeRange[]).map((r) => (
-                <button
+                <Tip
                   key={r}
-                  onClick={() => setTimeRange(r)}
-                  className={cn(
-                    "px-2 py-0.5 text-xs rounded transition-colors",
-                    timeRange === r
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
+                  content={r === "1Y" ? "Show last 1 year of price history" : r === "3Y" ? "Show last 3 years of price history" : "Show full available history"}
+                  below
                 >
-                  {r}
-                </button>
+                  <button
+                    onClick={() => setTimeRange(r)}
+                    className={cn(
+                      "px-2 py-0.5 text-xs rounded transition-colors",
+                      timeRange === r
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    {r}
+                  </button>
+                </Tip>
               ))}
             </div>
           </div>
@@ -162,7 +188,7 @@ export function StockDetail({ data, years = "10" }: StockDetailProps) {
             pePoints={pePoints.length ? pePoints : undefined}
             peMedian={peData?.median_5y ?? undefined}
             markers={markers}
-            height={320}
+            height={500}
             ticker={data.ticker}
           />
         </CardContent>
@@ -188,7 +214,9 @@ export function StockDetail({ data, years = "10" }: StockDetailProps) {
                   <div className="tabular-nums font-medium">{fmtCur(p.entry_price)}</div>
                 </div>
                 <div>
-                  <div className="text-muted-foreground">Fixed Target</div>
+                  <Tip content="The 52W high at the time of buying — this is the fixed sell target the strategy is waiting to hit">
+                    <div className="text-muted-foreground cursor-default">Fixed Target</div>
+                  </Tip>
                   <div className="tabular-nums text-purple-400">{fmtCur(p.target_price)}</div>
                 </div>
                 <div>
@@ -196,19 +224,25 @@ export function StockDetail({ data, years = "10" }: StockDetailProps) {
                   <div className="tabular-nums">{fmtCur(data.latest_close)}</div>
                 </div>
                 <div>
-                  <div className="text-muted-foreground">Days Held</div>
+                  <Tip content="Number of calendar days this position has been open since the buy date">
+                    <div className="text-muted-foreground cursor-default">Days Held</div>
+                  </Tip>
                   <div className="tabular-nums">
                     {Math.round((new Date().getTime() - new Date(p.entry_date).getTime()) / 86400000)}d
                   </div>
                 </div>
                 <div>
-                  <div className="text-muted-foreground">Unrealised</div>
+                  <Tip content="Current mark-to-market gain/loss on this open position (based on today's close vs entry price)">
+                    <div className="text-muted-foreground cursor-default">Unrealised</div>
+                  </Tip>
                   <div className={cn("tabular-nums font-medium", p.unrealised_pct >= 0 ? "text-green-400" : "text-red-400")}>
                     {fmtPct(p.unrealised_pct)}
                   </div>
                 </div>
                 <div>
-                  <div className="text-muted-foreground">% to Target</div>
+                  <Tip content="How much further the price needs to rise to hit the fixed sell target">
+                    <div className="text-muted-foreground cursor-default">% to Target</div>
+                  </Tip>
                   <div className="tabular-nums text-amber-400">
                     {p.target_price && data.latest_close
                       ? fmtPct(((p.target_price - data.latest_close) / data.latest_close) * 100)

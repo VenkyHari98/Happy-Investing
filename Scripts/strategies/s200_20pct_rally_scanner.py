@@ -183,9 +183,6 @@ def scan_stock(
         below_200dma = buy_price < ma200_val
         status       = compute_status(current_price, buy_price, days_to_expiry, below_200dma)
 
-        if status == "ABOVE_DMA":
-            continue
-
         if current_price > zone_high:
             dist_to_buy = round((current_price - zone_high) / zone_high * 100, 2)
         elif current_price < zone_low:
@@ -219,6 +216,7 @@ def scan_stock(
             "below_200dma":              below_200dma,
             "candle_count":              r["candle_count"],
             "status":                    status,
+            "above_dma_reason":          f"Buy ₹{buy_price:,.0f} > 200DMA ₹{ma200_val:,.0f}" if status == "ABOVE_DMA" else None,
             "dist_to_buy_zone_pct":      dist_to_buy,
             "remaining_gain_pct":        remaining_gain,
             "fund_fall_from_52w_high_pct": fall_from_52w_high,

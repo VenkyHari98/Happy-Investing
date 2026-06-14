@@ -1,6 +1,7 @@
 "use client";
 import { useState, useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
+import { Tip } from "@/components/ui/tooltip";
 import {
   Table,
   TableBody,
@@ -25,6 +26,40 @@ const STATUS_COLORS: Record<ProximityStatus, string> = {
   APPROACHING: "bg-amber-500/20 text-amber-400 border-amber-500/30",
   NEAR: "bg-blue-500/20 text-blue-400 border-blue-500/30",
   BEYOND: "bg-muted text-muted-foreground border-border",
+};
+
+const PILL_TOOLTIPS: Record<ProximityStatus | "ALL", string> = {
+  ALL: "Show all F40 stocks regardless of where they are relative to their 52W low",
+  IN_ZONE: "Price is within 3% of the 52-week rolling low — the strategy's buy zone",
+  APPROACHING: "Price is 3–8% above the 52W low — approaching buy territory, worth watching",
+  NEAR: "Price is near the 200-day moving average — moderate proximity, not yet at low",
+  BEYOND: "Price is well above the 52W low — no immediate buying opportunity right now",
+};
+
+// Pill labels differ from table badge labels for BEYOND
+const PILL_LABELS: Record<ProximityStatus, string> = {
+  IN_ZONE: "At 52W Low",
+  APPROACHING: "Approaching",
+  NEAR: "Near DMA",
+  BEYOND: "No Signal / Far",
+};
+
+type SignalKey = "52W_LOW_BUY_CANDIDATE" | "52W_HIGH_SELL_CANDIDATE" | "ENVELOPE_LONG_CANDIDATE" | "ENVELOPE_SHORT_CANDIDATE" | "NO_IMMEDIATE_SIGNAL";
+
+const SIGNAL_LABELS: Record<SignalKey, string> = {
+  "52W_LOW_BUY_CANDIDATE":    "52W Low ↓",
+  "52W_HIGH_SELL_CANDIDATE":  "52W High ↑",
+  "ENVELOPE_LONG_CANDIDATE":  "Env Long ↓",
+  "ENVELOPE_SHORT_CANDIDATE": "Env Short ↑",
+  "NO_IMMEDIATE_SIGNAL":      "No Signal",
+};
+
+const SIGNAL_COLORS: Record<SignalKey, string> = {
+  "52W_LOW_BUY_CANDIDATE":    "bg-green-500/20 text-green-400 border-green-500/30",
+  "52W_HIGH_SELL_CANDIDATE":  "bg-purple-500/20 text-purple-400 border-purple-500/30",
+  "ENVELOPE_LONG_CANDIDATE":  "bg-orange-500/20 text-orange-400 border-orange-500/30",
+  "ENVELOPE_SHORT_CANDIDATE": "bg-red-500/20 text-red-400 border-red-500/30",
+  "NO_IMMEDIATE_SIGNAL":      "bg-muted text-muted-foreground border-border",
 };
 
 const STATUS_ORDER: Record<ProximityStatus, number> = {
@@ -100,21 +135,22 @@ export function ScannerTab({ rows, runDate }: ScannerTabProps) {
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex gap-2 flex-wrap">
           {(["ALL", "IN_ZONE", "APPROACHING", "NEAR", "BEYOND"] as const).map((id) => (
-            <button
-              key={id}
-              onClick={() => setFilter(id)}
-              className={cn(
-                "px-3 py-1 rounded-full text-xs font-medium border transition-colors",
-                filter === id
-                  ? "bg-primary text-primary-foreground border-primary"
-                  : "bg-muted/40 text-muted-foreground border-border hover:bg-muted"
-              )}
-            >
-              {id === "ALL" ? "All" : PROXIMITY_LABELS[id]}
-              {id !== "ALL" && counts[id] != null && (
-                <span className="ml-1.5 opacity-70">{counts[id]}</span>
-              )}
-            </button>
+            <Tip key={id} content={PILL_TOOLTIPS[id]} below>
+              <button
+                onClick={() => setFilter(id)}
+                className={cn(
+                  "px-3 py-1 rounded-full text-xs font-medium border transition-colors",
+                  filter === id
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "bg-muted/40 text-muted-foreground border-border hover:bg-muted"
+                )}
+              >
+                {id === "ALL" ? "All" : PILL_LABELS[id]}
+                {id !== "ALL" && counts[id] != null && (
+                  <span className="ml-1.5 opacity-70">{counts[id]}</span>
+                )}
+              </button>
+            </Tip>
           ))}
         </div>
         {runDate && (
@@ -170,26 +206,79 @@ export function ScannerTab({ rows, runDate }: ScannerTabProps) {
       </div>
 
       {/* Table */}
-      <div className="rounded-md border border-border overflow-auto">
+      <div className="rounded-md border border-border">
         <Table>
           <TableHeader>
             <TableRow className="hover:bg-transparent">
               <TableHead>Ticker</TableHead>
-              <TableHead>Status</TableHead>
+              <TableHead>
+                <Tip content="Where this stock sits relative to its 52-week rolling low" below>
+                  <span className="cursor-default">Status</span>
+                </Tip>
+              </TableHead>
+              <TableHead>
+                <Tip content="Active scanner signals: 52W Low ↓ means buy candidate, 52W High ↑ means near sell territory" below>
+                  <span className="cursor-default">Signals</span>
+                </Tip>
+              </TableHead>
               <TableHead>Sector</TableHead>
               <TableHead>Cap</TableHead>
               <TableHead className="text-right">Close</TableHead>
-              <TableHead className="text-right">52W Low</TableHead>
-              <TableHead className="text-right min-w-[100px]">Dist to Low</TableHead>
-              <TableHead className="text-right">52W High</TableHead>
-              <TableHead className="text-right">Pot. Gain</TableHead>
-              <TableHead className="text-right">200 DMA</TableHead>
-              <TableHead className="text-right">ABCD-A<br /><span className="text-[10px] text-muted-foreground font-normal">−10%</span></TableHead>
-              <TableHead className="text-right">ABCD-B<br /><span className="text-[10px] text-muted-foreground font-normal">−19%</span></TableHead>
-              <TableHead className="text-right">ABCD-C<br /><span className="text-[10px] text-muted-foreground font-normal">−27%</span></TableHead>
-              <TableHead className="text-right">ABCD-D<br /><span className="text-[10px] text-muted-foreground font-normal">−34%</span></TableHead>
-              <TableHead className="text-right">PE</TableHead>
-              <TableHead className="text-right">5Yr PE</TableHead>
+              <TableHead className="text-right">
+                <Tip content="Rolling 52-week low — the strategy's buy trigger level" below>
+                  <span className="cursor-default">52W Low</span>
+                </Tip>
+              </TableHead>
+              <TableHead className="text-right min-w-[100px]">
+                <Tip content="How far above the 52W low the current price is. 0% = at the low (buy zone). Lower is better for entry" below>
+                  <span className="cursor-default">Dist to Low</span>
+                </Tip>
+              </TableHead>
+              <TableHead className="text-right">
+                <Tip content="Rolling 52-week high — this becomes the fixed sell target when the strategy buys" below>
+                  <span className="cursor-default">52W High</span>
+                </Tip>
+              </TableHead>
+              <TableHead className="text-right">
+                <Tip content="Potential upside from current price to the 52W high. This is the expected gain if the strategy buys now and the target is hit" below>
+                  <span className="cursor-default">Pot. Gain</span>
+                </Tip>
+              </TableHead>
+              <TableHead className="text-right">
+                <Tip content="200-day moving average — a key trend indicator. Price near the DMA often signals a recovery zone" below>
+                  <span className="cursor-default">200 DMA</span>
+                </Tip>
+              </TableHead>
+              <TableHead className="text-right">
+                <Tip content="ABCD Averaging level A: if you buy at the 52W low and the stock falls further, this is your 2nd buy level at −10% below the low" below>
+                  ABCD-A<br /><span className="text-[10px] text-muted-foreground font-normal">−10%</span>
+                </Tip>
+              </TableHead>
+              <TableHead className="text-right">
+                <Tip content="ABCD level B: 3rd averaging tranche at −19% below the 52W low" below>
+                  ABCD-B<br /><span className="text-[10px] text-muted-foreground font-normal">−19%</span>
+                </Tip>
+              </TableHead>
+              <TableHead className="text-right">
+                <Tip content="ABCD level C: 4th averaging tranche at −27% below the 52W low" below>
+                  ABCD-C<br /><span className="text-[10px] text-muted-foreground font-normal">−27%</span>
+                </Tip>
+              </TableHead>
+              <TableHead className="text-right">
+                <Tip content="ABCD level D: deepest averaging tranche at −34% below the 52W low — last resort if the stock keeps falling" below>
+                  ABCD-D<br /><span className="text-[10px] text-muted-foreground font-normal">−34%</span>
+                </Tip>
+              </TableHead>
+              <TableHead className="text-right">
+                <Tip content="Current Price-to-Earnings ratio — compare with 5Yr average to judge if the stock is cheap or expensive" below>
+                  <span className="cursor-default">PE</span>
+                </Tip>
+              </TableHead>
+              <TableHead className="text-right">
+                <Tip content="5-year average PE — a long-term valuation benchmark. Current PE below this suggests the stock may be historically cheap" below>
+                  <span className="cursor-default">5Yr PE</span>
+                </Tip>
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -210,6 +299,18 @@ export function ScannerTab({ rows, runDate }: ScannerTabProps) {
                     <span className={cn("inline-flex items-center px-2 py-0.5 rounded-full text-xs border", STATUS_COLORS[status])}>
                       {PROXIMITY_LABELS[status]}
                     </span>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex flex-wrap gap-1">
+                      {(row.signals ?? []).map((sig) => {
+                        const key = sig as SignalKey;
+                        return (
+                          <span key={sig} className={cn("inline-flex items-center px-1.5 py-0.5 rounded text-[10px] border", SIGNAL_COLORS[key] ?? "bg-muted text-muted-foreground border-border")}>
+                            {SIGNAL_LABELS[key] ?? sig}
+                          </span>
+                        );
+                      })}
+                    </div>
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">{row.sector}</TableCell>
                   <TableCell>
@@ -249,7 +350,7 @@ export function ScannerTab({ rows, runDate }: ScannerTabProps) {
             })}
             {sorted.length === 0 && (
               <TableRow>
-                <TableCell colSpan={16} className="text-center text-muted-foreground py-8">
+                <TableCell colSpan={17} className="text-center text-muted-foreground py-8">
                   No stocks match this filter
                 </TableCell>
               </TableRow>

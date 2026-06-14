@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tip } from "@/components/ui/tooltip";
 import { api } from "@/lib/api";
 import { getProximityStatus, PROXIMITY_LABELS, type ScannerRow, type S200Rally } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -128,15 +129,31 @@ function SignalTable({ signals }: { signals: UnifiedSignal[] }) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
-        <thead>
+        <thead className="sticky top-0 z-10 bg-background">
           <tr className="border-b border-border text-xs">
             <Th col="ticker">Ticker</Th>
-            <th className="pb-2 pr-4 text-left text-muted-foreground font-medium whitespace-nowrap">Strategy</th>
-            <Th col="status">Status</Th>
+            <th className="pb-2 pr-4 text-left text-muted-foreground font-medium whitespace-nowrap">
+              <Tip content="Which strategy flagged this stock: 52W = 52-week Low/High, S200 = 20% Rally" below>
+                <span className="cursor-default">Strategy</span>
+              </Tip>
+            </th>
+            <Th col="status">
+              <Tip content="How close the stock is to the strategy's buy zone right now" below>
+                <span className="cursor-default">Status</span>
+              </Tip>
+            </Th>
             <th className="pb-2 pr-4 text-left text-muted-foreground font-medium">Sector</th>
             <th className="pb-2 pr-4 text-left text-muted-foreground font-medium">Cap</th>
-            <Th col="metric">Key Metric</Th>
-            <th className="pb-2 text-right text-muted-foreground font-medium">Go To</th>
+            <Th col="metric">
+              <Tip content="The most relevant number for this signal (distance to low for 52W, remaining gain for S200)" below>
+                <span className="cursor-default">Key Metric</span>
+              </Tip>
+            </Th>
+            <th className="pb-2 text-right text-muted-foreground font-medium">
+              <Tip content="Click to open the full analysis for this stock in its strategy tab" below>
+                <span className="cursor-default">Go To</span>
+              </Tip>
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -260,7 +277,7 @@ export default function ScannerPage() {
   const actionableS200 = s200Signals.filter((s) => s.statusPriority <= 1).length;
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col">
       {/* Header */}
       <div className="px-6 py-4 border-b border-border shrink-0">
         <div className="flex items-start justify-between gap-4">
@@ -281,14 +298,16 @@ export default function ScannerPage() {
         {!loading && (
           <div className="flex gap-3 mt-3 flex-wrap">
             {[
-              { label: "Total Signals", value: allSignals.length, cls: "text-foreground" },
-              { label: "Actionable (F40 52W)", value: actionableF40, cls: "text-primary" },
-              { label: "Actionable (S200)", value: actionableS200, cls: "text-violet-400" },
-            ].map(({ label, value, cls }) => (
-              <div key={label} className="flex items-center gap-1.5 bg-card border border-border rounded px-3 py-1.5">
-                <span className={cn("text-base font-semibold tabular-nums", cls)}>{value}</span>
-                <span className="text-xs text-muted-foreground">{label}</span>
-              </div>
+              { label: "Total Signals", value: allSignals.length, cls: "text-foreground", tip: "Combined count of F40 52W and S200 rally opportunities currently active" },
+              { label: "Actionable (F40 52W)", value: actionableF40, cls: "text-primary", tip: "F40 stocks at or near their 52-week low right now — 52W Low strategy buy candidates" },
+              { label: "Actionable (S200)", value: actionableS200, cls: "text-violet-400", tip: "S200 stocks currently in or approaching their 20% rally buy zone" },
+            ].map(({ label, value, cls, tip }) => (
+              <Tip key={label} content={tip} below>
+                <div className="flex items-center gap-1.5 bg-card border border-border rounded px-3 py-1.5">
+                  <span className={cn("text-base font-semibold tabular-nums", cls)}>{value}</span>
+                  <span className="text-xs text-muted-foreground">{label}</span>
+                </div>
+              </Tip>
             ))}
           </div>
         )}
@@ -341,7 +360,7 @@ export default function ScannerPage() {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-auto px-6 py-4">
+      <div className="px-6 py-4">
         {loading ? (
           <div className="flex items-center justify-center h-40">
             <span className="text-sm text-muted-foreground animate-pulse">Loading scanner data…</span>
@@ -350,15 +369,21 @@ export default function ScannerPage() {
           <Tabs defaultValue="all">
             <TabsList className="mb-4">
               <TabsTrigger value="all">
-                All Signals
+                <Tip content="All active signals from both strategies combined" below>
+                  <span>All Signals</span>
+                </Tip>
                 <span className="ml-1.5 text-xs text-muted-foreground tabular-nums">({filteredAll.length})</span>
               </TabsTrigger>
               <TabsTrigger value="f40">
-                F40 52W
+                <Tip content="Only 52W Low strategy signals from the F40 watchlist" below>
+                  <span>F40 52W</span>
+                </Tip>
                 <span className="ml-1.5 text-xs text-muted-foreground tabular-nums">({filteredF40.length})</span>
               </TabsTrigger>
               <TabsTrigger value="s200">
-                S200 Rallies
+                <Tip content="Only 20% Rally strategy signals from the S200 watchlist" below>
+                  <span>S200 Rallies</span>
+                </Tip>
                 <span className="ml-1.5 text-xs text-muted-foreground tabular-nums">({filteredS200.length})</span>
               </TabsTrigger>
             </TabsList>

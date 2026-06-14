@@ -11,9 +11,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { MetricCards, type MetricDef } from "@/components/52w/MetricCards";
 import { StockChart, type ChartPoint, type TradeMarker } from "@/components/charts/StockChart";
 import type { EnvelopeTrade, EnvelopeStockData } from "@/lib/types";
+import { Tip } from "@/components/ui/tooltip";
 import { api } from "@/lib/api";
 import { fmtCur, fmtPct, fmtNum, fmtDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -68,16 +68,6 @@ export function EnvelopeStockDetail({ ticker, trades, envelopePct, years = "10" 
   const cap_tier = trades[0]?.cap_tier ?? "";
   const sector = trades[0]?.sector ?? "";
 
-  const metricCards: MetricDef[] = [
-    { label: "Total Trades", value: trades.length, variant: "accent" },
-    { label: "Won", value: wins, variant: "green" },
-    { label: "Win Rate", value: fmtNum(winRate) + "%", variant: winRate >= 70 ? "green" : "amber" },
-    { label: "Avg P/L", value: fmtPct(avgPnl), variant: avgPnl >= 0 ? "green" : "red" },
-    { label: "Total Net P/L", value: fmtCur(totalNetPnl), variant: totalNetPnl >= 0 ? "green" : "red" },
-    { label: "Best Trade", value: fmtPct(bestTrade), variant: "green" },
-    { label: "Worst Trade", value: fmtPct(worstTrade), variant: "red" },
-    { label: "Avg Duration", value: `${Math.round(avgDays)}d` },
-  ];
 
   // Time range cutoff
   const cutoffDate = useMemo(() => {
@@ -153,8 +143,33 @@ export function EnvelopeStockDetail({ ticker, trades, envelopePct, years = "10" 
         <Badge variant="secondary" className="text-xs ml-auto">Env ±{envelopePct}%</Badge>
       </div>
 
-      {/* Metrics */}
-      <MetricCards metrics={metricCards} />
+      {/* Compact stat strip */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs -mt-1">
+        <span className="text-muted-foreground">
+          <span className="text-foreground font-medium tabular-nums">{trades.length}</span> trades
+        </span>
+        <span className="text-muted-foreground">
+          <span className="text-green-400 font-medium tabular-nums">{wins}</span> won
+        </span>
+        <span className="text-muted-foreground">
+          WR <span className={cn("font-medium", winRate >= 70 ? "text-green-400" : "text-amber-400")}>{fmtNum(winRate)}%</span>
+        </span>
+        <span className="text-muted-foreground">
+          Avg <span className={cn("font-medium", avgPnl >= 0 ? "text-green-400" : "text-red-400")}>{fmtPct(avgPnl)}</span>
+        </span>
+        <span className="text-muted-foreground">
+          Best <span className="text-green-400 font-medium">{fmtPct(bestTrade)}</span>
+        </span>
+        <span className="text-muted-foreground">
+          Worst <span className="text-red-400 font-medium">{fmtPct(worstTrade)}</span>
+        </span>
+        <span className="text-muted-foreground">
+          Net P/L <span className={cn("font-medium", totalNetPnl >= 0 ? "text-green-400" : "text-red-400")}>{fmtCur(totalNetPnl)}</span>
+        </span>
+        <span className="text-muted-foreground">
+          Hold <span className="font-medium">{Math.round(avgDays)}d</span>
+        </span>
+      </div>
 
       {/* Chart */}
       <Card>
@@ -163,26 +178,39 @@ export function EnvelopeStockDetail({ ticker, trades, envelopePct, years = "10" 
             <CardTitle className="text-sm font-medium text-muted-foreground">
               Price · 200 SMA · Envelope Bands
               <span className="ml-3 text-[10px] space-x-3">
-                <span className="text-amber-400">■ Lower/Upper Env (±{envelopePct}%)</span>
-                <span className="text-green-500">■ L = Long entry</span>
-                <span className="text-red-400">■ S = Sell exit</span>
-                <span className="text-gray-500">● M = Missed (cycle active)</span>
+                <Tip content={`The envelope bands ±${envelopePct}% around the 200 SMA — buy at lower, sell at upper`}>
+                  <span className="text-amber-400 cursor-default">■ Lower/Upper Env (±{envelopePct}%)</span>
+                </Tip>
+                <Tip content="Strategy bought here — price touched the lower envelope band">
+                  <span className="text-green-500 cursor-default">■ L = Long entry</span>
+                </Tip>
+                <Tip content="Strategy sold here — price reached the upper envelope or mean-reverted to 200 SMA">
+                  <span className="text-red-400 cursor-default">■ S = Sell exit</span>
+                </Tip>
+                <Tip content="Stock touched the lower envelope again but was skipped — a trade was already open for this stock">
+                  <span className="text-gray-500 cursor-default">● M = Missed (cycle active)</span>
+                </Tip>
               </span>
             </CardTitle>
             <div className="flex gap-1 border border-border rounded p-0.5">
               {(["1Y", "3Y", "All"] as TimeRange[]).map((r) => (
-                <button
+                <Tip
                   key={r}
-                  onClick={() => setTimeRange(r)}
-                  className={cn(
-                    "px-2 py-0.5 text-xs rounded transition-colors",
-                    timeRange === r
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
+                  content={r === "1Y" ? "Show last 1 year of price history" : r === "3Y" ? "Show last 3 years of price history" : "Show full available history"}
+                  below
                 >
-                  {r}
-                </button>
+                  <button
+                    onClick={() => setTimeRange(r)}
+                    className={cn(
+                      "px-2 py-0.5 text-xs rounded transition-colors",
+                      timeRange === r
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    {r}
+                  </button>
+                </Tip>
               ))}
             </div>
           </div>
@@ -201,7 +229,7 @@ export function EnvelopeStockDetail({ ticker, trades, envelopePct, years = "10" 
               pePoints={pePoints.length ? pePoints : undefined}
               peMedian={peData?.median_5y ?? undefined}
               markers={markers}
-              height={320}
+              height={500}
               ticker={ticker}
             />
           )}
@@ -224,11 +252,11 @@ export function EnvelopeStockDetail({ ticker, trades, envelopePct, years = "10" 
                   <TableHead className="text-right">Entry ₹</TableHead>
                   <TableHead>Exit Date</TableHead>
                   <TableHead className="text-right">Exit ₹</TableHead>
-                  <TableHead className="text-right">Days</TableHead>
-                  <TableHead className="text-right">Alloc %</TableHead>
-                  <TableHead className="text-right">P/L %</TableHead>
-                  <TableHead className="text-right">Net P/L</TableHead>
-                  <TableHead>Exit</TableHead>
+                  <TableHead className="text-right"><Tip content="Calendar days this trade was held" below><span className="cursor-default">Days</span></Tip></TableHead>
+                  <TableHead className="text-right"><Tip content="What % of the portfolio was allocated to this trade in the backtest" below><span className="cursor-default">Alloc %</span></Tip></TableHead>
+                  <TableHead className="text-right"><Tip content="% gain or loss from entry to exit" below><span className="cursor-default">P/L %</span></Tip></TableHead>
+                  <TableHead className="text-right"><Tip content="₹ profit/loss for this trade based on the allocated position size" below><span className="cursor-default">Net P/L</span></Tip></TableHead>
+                  <TableHead><Tip content="How the trade closed: ENV_EXIT = upper envelope hit, STOP_LOSS = stop triggered, OPEN = still active" below><span className="cursor-default">Exit</span></Tip></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>

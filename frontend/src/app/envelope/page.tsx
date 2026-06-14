@@ -11,6 +11,7 @@ import { EnvelopeStockList } from "@/components/envelope/EnvelopeStockList";
 import { EnvelopeStockDetail } from "@/components/envelope/EnvelopeStockDetail";
 import { EnvelopeScannerTab } from "@/components/envelope/EnvelopeScannerTab";
 import { PortfolioBacktest } from "@/components/portfolio/PortfolioBacktest";
+import { Tip } from "@/components/ui/tooltip";
 import { api } from "@/lib/api";
 import { fmtPct, fmtNum } from "@/lib/format";
 
@@ -27,6 +28,7 @@ export default function EnvelopePage() {
   const [horizon, setHorizon] = useState<Horizon>("10");
   const [portfolioVariant, setPortfolioVariant] = useState("fixed_env-long");
   const [selectedStockTicker, setSelectedStockTicker] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<string>("scanner");
   const queryClient = useQueryClient();
   const prevRunningRef = useRef(false);
 
@@ -117,19 +119,19 @@ export default function EnvelopePage() {
   const m = summary?.metrics;
   const summaryMetrics: MetricDef[] = m
     ? [
-        { label: "Total Trades", value: m.total_trades, variant: "accent" },
-        { label: "Win Rate", value: fmtPct(m.win_rate, 1), variant: "green" },
-        { label: "CAGR", value: fmtPct(m.cagr, 1), variant: m.cagr >= 0 ? "green" : "red" },
-        { label: "Avg Trade P/L", value: fmtPct(m.avg_trade_pnl_pct), variant: m.avg_trade_pnl_pct >= 0 ? "green" : "red" },
-        { label: "Best Trade", value: fmtPct(m.max_gain_pct), variant: "green" },
-        { label: "Worst Trade", value: fmtPct(m.max_loss_pct), variant: "red" },
-        { label: "Avg Duration", value: m.avg_trade_duration_days ? `${Math.round(m.avg_trade_duration_days)}d` : "—" },
-        { label: "Max Drawdown", value: fmtPct(m.max_drawdown), variant: "red" },
+        { label: "Total Trades", value: m.total_trades, variant: "accent", tooltip: "All buy→sell cycles the envelope strategy completed across F40 stocks" },
+        { label: "Win Rate", value: fmtPct(m.win_rate, 1), variant: "green", tooltip: "% of completed trades that exited at a profit" },
+        { label: "CAGR", value: fmtPct(m.cagr, 1), variant: m.cagr >= 0 ? "green" : "red", tooltip: "Compound Annual Growth Rate over the backtest period" },
+        { label: "Avg Trade P/L", value: fmtPct(m.avg_trade_pnl_pct), variant: m.avg_trade_pnl_pct >= 0 ? "green" : "red", tooltip: "Average % return per completed trade" },
+        { label: "Best Trade", value: fmtPct(m.max_gain_pct), variant: "green", tooltip: "Highest single-trade return in the backtest" },
+        { label: "Worst Trade", value: fmtPct(m.max_loss_pct), variant: "red", tooltip: "Biggest single-trade loss — useful for understanding downside risk" },
+        { label: "Avg Duration", value: m.avg_trade_duration_days ? `${Math.round(m.avg_trade_duration_days)}d` : "—", tooltip: "Average days held per envelope trade" },
+        { label: "Max Drawdown", value: fmtPct(m.max_drawdown), variant: "red", tooltip: "Largest peak-to-trough drop in portfolio value during the backtest — a key risk measure" },
       ]
     : [];
 
   return (
-    <div className="flex flex-col h-screen">
+    <div className="flex flex-col">
       {/* Page header */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
         <div>
@@ -140,27 +142,34 @@ export default function EnvelopePage() {
         </div>
         <div className="flex gap-1 border border-border rounded-md p-0.5">
           {(["5", "10"] as Horizon[]).map((h) => (
-            <button
+            <Tip
               key={h}
-              onClick={() => setHorizon(h)}
-              className={`px-3 py-1 text-sm rounded transition-colors ${
-                horizon === h ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
-              }`}
+              content={h === "5" ? "Run the backtest using 5 years of price history" : "Run the backtest using 10 years of price history — gives more data but may include older market conditions"}
+              below
             >
-              {h}Y
-            </button>
+              <button
+                onClick={() => setHorizon(h)}
+                className={`px-3 py-1 text-sm rounded transition-colors ${
+                  horizon === h ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {h}Y
+              </button>
+            </Tip>
           ))}
         </div>
       </div>
 
-      {/* Summary metrics (per-stock backtest) */}
-      <div className="px-6 py-3 border-b border-border shrink-0">
-        {summaryLoading ? (
-          <div className="text-xs text-muted-foreground">Loading metrics…</div>
-        ) : (
-          <MetricCards metrics={summaryMetrics} />
-        )}
-      </div>
+      {/* Summary metrics — hidden when Stock Analysis tab is active */}
+      {activeTab !== "analysis" && (
+        <div className="px-6 py-3 border-b border-border shrink-0">
+          {summaryLoading ? (
+            <div className="text-xs text-muted-foreground">Loading metrics…</div>
+          ) : (
+            <MetricCards metrics={summaryMetrics} />
+          )}
+        </div>
+      )}
 
       {/* Parameter panel — shows current params + Re-run control */}
       <EnvelopeConfigPanel
@@ -175,16 +184,36 @@ export default function EnvelopePage() {
       <GridSearchPanel years={horizon} />
 
       {/* Sub-tabs */}
-      <Tabs defaultValue="scanner" className="flex flex-col flex-1 overflow-hidden">
+      <Tabs defaultValue="scanner" onValueChange={setActiveTab} className="flex flex-col">
         <TabsList className="mx-6 mt-3 w-fit shrink-0">
-          <TabsTrigger value="scanner">Scanner</TabsTrigger>
-          <TabsTrigger value="trades">Trade Log</TabsTrigger>
-          <TabsTrigger value="bystock">By Stock</TabsTrigger>
-          <TabsTrigger value="analysis">Stock Analysis</TabsTrigger>
-          <TabsTrigger value="portfolio">Portfolio Backtest</TabsTrigger>
+          <TabsTrigger value="scanner">
+            <Tip content="See which F40 stocks are currently near the lower envelope band — live buy candidates" below>
+              <span>Scanner</span>
+            </Tip>
+          </TabsTrigger>
+          <TabsTrigger value="trades">
+            <Tip content="Full list of every individual envelope trade across all stocks" below>
+              <span>Trade Log</span>
+            </Tip>
+          </TabsTrigger>
+          <TabsTrigger value="bystock">
+            <Tip content="Aggregate win rate and P/L stats grouped by stock" below>
+              <span>By Stock</span>
+            </Tip>
+          </TabsTrigger>
+          <TabsTrigger value="analysis">
+            <Tip content="Deep-dive into a single stock's envelope trades and price chart" below>
+              <span>Stock Analysis</span>
+            </Tip>
+          </TabsTrigger>
+          <TabsTrigger value="portfolio">
+            <Tip content="Simulate the envelope strategy across the full F40 portfolio" below>
+              <span>Portfolio Backtest</span>
+            </Tip>
+          </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="scanner" className="flex-1 overflow-y-auto px-6 py-4">
+        <TabsContent value="scanner" className="px-6 py-4">
           {scannerRows ? (
             <EnvelopeScannerTab
               rows={scannerRows}
@@ -196,7 +225,7 @@ export default function EnvelopePage() {
           )}
         </TabsContent>
 
-        <TabsContent value="trades" className="flex-1 overflow-y-auto px-6 py-4">
+        <TabsContent value="trades" className="px-6 py-4">
           {tradesLoading ? (
             <div className="text-sm text-muted-foreground">Loading trades…</div>
           ) : trades ? (
@@ -204,7 +233,7 @@ export default function EnvelopePage() {
           ) : null}
         </TabsContent>
 
-        <TabsContent value="bystock" className="flex-1 overflow-y-auto px-6 py-4">
+        <TabsContent value="bystock" className="px-6 py-4">
           {tradesLoading ? (
             <div className="text-sm text-muted-foreground">Loading trades…</div>
           ) : trades ? (
@@ -213,13 +242,13 @@ export default function EnvelopePage() {
         </TabsContent>
 
         {/* Stock Analysis — split panel with chart */}
-        <TabsContent value="analysis" className="flex-1 overflow-hidden">
+        <TabsContent value="analysis" className="overflow-hidden">
           {tradesLoading ? (
-            <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
+            <div className="flex items-center justify-center h-40 text-sm text-muted-foreground">
               Loading trade data…
             </div>
           ) : (
-            <div className="flex h-full">
+            <div className="flex h-[calc(100dvh-200px)] overflow-hidden">
               <div className="w-56 shrink-0 border-r border-border overflow-hidden">
                 <EnvelopeStockList
                   trades={trades ?? []}
@@ -245,7 +274,7 @@ export default function EnvelopePage() {
           )}
         </TabsContent>
 
-        <TabsContent value="portfolio" className="flex-1 overflow-y-auto px-6 py-4">
+        <TabsContent value="portfolio" className="px-6 py-4">
           {portfolioData ? (
             <PortfolioBacktest
               data={portfolioData}

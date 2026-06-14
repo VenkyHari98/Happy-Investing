@@ -159,7 +159,7 @@ export interface EnvelopeSummary extends BacktestSummary {
 
 // ── S200 Scanner ─────────────────────────────────────────────────────────────
 
-export type S200Status = "IN_ZONE" | "APPROACHING" | "WATCHING_NEAR" | "WATCHING" | "BELOW_BUY";
+export type S200Status = "IN_ZONE" | "APPROACHING" | "WATCHING_NEAR" | "WATCHING" | "BELOW_BUY" | "ABOVE_DMA";
 
 export interface S200Rally {
   ticker: string;
@@ -179,6 +179,7 @@ export interface S200Rally {
   buy_zone_low: number;
   buy_zone_high: number;
   status: S200Status;
+  above_dma_reason?: string | null;
   dist_to_buy_zone_pct: number;
   remaining_gain_pct: number;
   below_200dma: boolean;
@@ -474,3 +475,160 @@ export const PROXIMITY_LABELS: Record<ProximityStatus, string> = {
   NEAR: "Near DMA",
   BEYOND: "Far",
 };
+
+// ── RHS / CWH ────────────────────────────────────────────────────────────────
+
+export interface RHSPattern {
+  pattern_type: "RHS";
+  l_shoulder_date: string;
+  l_shoulder_price: number;
+  head_date: string;
+  head_price: number;
+  r_shoulder_date: string;
+  r_shoulder_price: number;
+  neckline_price: number;
+  breakout_date: string | null;
+  target_price: number;
+}
+
+export interface CWHPattern {
+  pattern_type: "CWH";
+  cup_left_date: string;
+  cup_left_price: number;
+  cup_bottom_date: string;
+  cup_bottom_price: number;
+  cup_right_date: string;
+  cup_right_price: number;
+  handle_low_date: string;
+  handle_low_price: number;
+  neckline_price: number;
+  breakout_date: string | null;
+  target_price: number;
+}
+
+export interface RHSOpportunity {
+  ticker: string;
+  cap_tier: string;
+  sector: string;
+  pattern_type: "RHS" | "CWH";
+  status: "FORMING" | "BREAKOUT";
+  neckline: number;
+  current_price: number;
+  pct_to_neckline: number;
+  target: number;
+  last_date: string;
+  breakout_date: string | null;
+  pattern_start_date: string;
+  // RHS-specific
+  head_price?: number;
+  r_shoulder_date?: string;
+  r_shoulder_price?: number;
+  // CWH-specific
+  cup_bottom_price?: number;
+  handle_low_date?: string;
+  handle_low_price?: number;
+}
+
+export interface RHSScannerData {
+  run_date: string;
+  stocks_scanned: number;
+  total_found: number;
+  rhs_count: number;
+  cwh_count: number;
+  breakout_count: number;
+  forming_count: number;
+  opportunities: RHSOpportunity[];
+}
+
+export interface RHSPriceMarker {
+  label: string;
+  pattern_type: "RHS" | "CWH";
+  price: number;
+}
+
+export interface RHSPricePoint {
+  date: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  ma200: number | null;
+  markers: RHSPriceMarker[];
+}
+
+export interface RHSStockOverview {
+  ticker: string;
+  cap_tier: string;
+  sector: string;
+  latest_close: number;
+  latest_date: string;
+  trades_count: number;
+  total_pnl: number;
+  open_count: number;
+  rhs_count: number;
+  cwh_count: number;
+}
+
+export interface RHSOpenPosition {
+  entry_date: string;
+  entry_price: number;
+  exit_target: number;
+  neckline: number;
+  latest_close: number;
+  days_held: number;
+  unrealised_pct: number;
+  pct_to_target: number;
+  pattern_type: "RHS" | "CWH";
+}
+
+export interface RHSStockDetail {
+  ticker: string;
+  cap_tier: string;
+  sector: string;
+  latest_close: number;
+  latest_date: string;
+  trades_count: number;
+  total_pnl: number;
+  pe_current: number | null;
+  pe_3yr_avg: number | null;
+  pe_5yr_avg: number | null;
+  rhs_patterns: RHSPattern[];
+  cwh_patterns: CWHPattern[];
+  open_positions: RHSOpenPosition[];
+  prices: RHSPricePoint[];
+  trades: Trade[];
+  skipped_entries: Array<{ date: string; price: number; reason: string; pattern_type: string }>;
+}
+
+export interface RHSBacktestStockData {
+  overview: RHSStockOverview[];
+  stock_data: Record<string, RHSStockDetail>;
+}
+
+export interface RHSBacktestMetrics {
+  total_trades: number;
+  winning_trades: number;
+  losing_trades: number;
+  win_rate: number;
+  total_pnl: number;
+  avg_trade_pnl_pct: number;
+  max_gain_pct: number;
+  max_loss_pct: number;
+  avg_trade_duration_days: number;
+  cagr: number;
+  sharpe: number;
+  max_drawdown: number;
+}
+
+export interface RHSBacktestSummary {
+  backtest_date: string;
+  backtest_years: number;
+  portfolio_value: number;
+  slippage_pct: number;
+  total_trades: number;
+  open_positions: number;
+  stocks_tested: number;
+  pattern_params: Record<string, number | boolean>;
+  metrics: RHSBacktestMetrics;
+  fundamental_gates: Record<string, number | boolean>;
+}

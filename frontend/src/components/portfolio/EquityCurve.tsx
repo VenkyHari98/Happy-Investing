@@ -9,6 +9,7 @@ import {
   type LineData,
 } from "lightweight-charts";
 import type { EquityCurvePoint } from "@/lib/types";
+import { Tip } from "@/components/ui/tooltip";
 
 interface Props {
   data: EquityCurvePoint[];
@@ -113,15 +114,21 @@ export function EquityCurve({ data, initialCapital = 100000, height = 300 }: Pro
   return (
     <div className="space-y-1">
       <div className="flex gap-4 text-xs text-muted-foreground px-1">
-        <span className="flex items-center gap-1">
-          <span className="inline-block w-3 h-0.5 bg-blue-400" /> Portfolio
-        </span>
-        <span className="flex items-center gap-1">
-          <span className="inline-block w-3 h-0.5 bg-teal-400" style={{ borderTop: "1px dashed" }} /> Deployed
-        </span>
-        <span className="flex items-center gap-1">
-          <span className="inline-block w-3 h-0.5 bg-slate-500" /> Cash
-        </span>
+        <Tip content="Total portfolio value over time (deployed capital + cash)">
+          <span className="flex items-center gap-1 cursor-default">
+            <span className="inline-block w-3 h-0.5 bg-blue-400" /> Portfolio
+          </span>
+        </Tip>
+        <Tip content="Capital actually invested in open trades at each point in time">
+          <span className="flex items-center gap-1 cursor-default">
+            <span className="inline-block w-3 h-0.5 bg-teal-400" style={{ borderTop: "1px dashed" }} /> Deployed
+          </span>
+        </Tip>
+        <Tip content="Uninvested capital sitting idle — the gap between portfolio value and deployed capital">
+          <span className="flex items-center gap-1 cursor-default">
+            <span className="inline-block w-3 h-0.5 bg-slate-500" /> Cash
+          </span>
+        </Tip>
       </div>
       <div ref={containerRef} style={{ height }} className="w-full" />
     </div>

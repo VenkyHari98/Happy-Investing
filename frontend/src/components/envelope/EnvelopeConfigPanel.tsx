@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Tip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 interface RunStatus {
@@ -42,9 +43,15 @@ export function EnvelopeConfigPanel({
       {/* Collapsed view — param summary + expand button */}
       <div className="flex items-center gap-3 text-xs">
         <span className="text-muted-foreground font-medium">Backtest params:</span>
-        <Badge variant="outline" className="text-xs font-mono">Env ±{currentEnvelopePct}%</Badge>
-        <Badge variant="outline" className="text-xs font-mono">Zone ±{currentEntryBandPct}%</Badge>
-        <Badge variant="secondary" className="text-xs">L 5% · M 3% · S 2%</Badge>
+        <Tip content="The envelope width — how far above/below the 200 SMA the buy/sell bands are set" below>
+          <Badge variant="outline" className="text-xs font-mono">Env ±{currentEnvelopePct}%</Badge>
+        </Tip>
+        <Tip content="Entry band tolerance — how close to the lower envelope the price must be to trigger a buy" below>
+          <Badge variant="outline" className="text-xs font-mono">Zone ±{currentEntryBandPct}%</Badge>
+        </Tip>
+        <Tip content="Position sizing by cap tier: Large Cap gets 5% of capital per trade, Mid 3%, Small 2%" below>
+          <Badge variant="secondary" className="text-xs">L 5% · M 3% · S 2%</Badge>
+        </Tip>
         <button
           onClick={() => setExpanded((e) => !e)}
           disabled={isRunning}
@@ -77,7 +84,9 @@ export function EnvelopeConfigPanel({
             <div className="flex flex-wrap items-end gap-4">
               {/* Envelope % */}
               <label className="flex flex-col gap-1">
-                <span className="text-xs text-muted-foreground">Envelope %</span>
+                <Tip content="Width of the envelope around the 200 SMA. At 14%, lower band = 200 SMA − 14% and upper = 200 SMA + 14%">
+                  <span className="text-xs text-muted-foreground cursor-default">Envelope %</span>
+                </Tip>
                 <div className="flex items-center gap-1">
                   <input
                     type="number"
@@ -95,7 +104,9 @@ export function EnvelopeConfigPanel({
 
               {/* Entry Band (Zone) % */}
               <label className="flex flex-col gap-1">
-                <span className="text-xs text-muted-foreground">Zone % (entry band)</span>
+                <Tip content="Tolerance above the lower envelope that still counts as 'in zone'. A wider zone catches more entries but may be less precise">
+                  <span className="text-xs text-muted-foreground cursor-default">Zone % (entry band)</span>
+                </Tip>
                 <div className="flex items-center gap-1">
                   <input
                     type="number"

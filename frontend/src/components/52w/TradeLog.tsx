@@ -7,6 +7,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Tip } from "@/components/ui/tooltip";
 import { type Trade } from "@/lib/types";
 import { fmtCur, fmtPct, fmtDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -29,10 +30,26 @@ export function TradeLog({ trades }: TradeLogProps) {
             <TableHead>Exit</TableHead>
             <TableHead className="text-right">Entry ₹</TableHead>
             <TableHead className="text-right">Exit ₹</TableHead>
-            <TableHead className="text-right">P/L %</TableHead>
-            <TableHead className="text-right">Net P/L</TableHead>
-            <TableHead className="text-right">Days</TableHead>
-            <TableHead>Reason</TableHead>
+            <TableHead className="text-right">
+              <Tip content="% gain or loss from entry to exit price — gross, before any costs" below>
+                <span className="cursor-default">P/L %</span>
+              </Tip>
+            </TableHead>
+            <TableHead className="text-right">
+              <Tip content="Absolute profit/loss in ₹ based on the position size used in the backtest" below>
+                <span className="cursor-default">Net P/L</span>
+              </Tip>
+            </TableHead>
+            <TableHead className="text-right">
+              <Tip content="Calendar days from buy entry to sell exit — how long this trade was held" below>
+                <span className="cursor-default">Days</span>
+              </Tip>
+            </TableHead>
+            <TableHead>
+              <Tip content="Why the strategy exited: 'target hit' means price reached the 52W high; other reasons indicate early or forced exit" below>
+                <span className="cursor-default">Reason</span>
+              </Tip>
+            </TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>

@@ -8,6 +8,7 @@ import { S200BacktestTable } from "@/components/s200/S200BacktestTable";
 import { S200StockList } from "@/components/s200/S200StockList";
 import { S200StockDetail } from "@/components/s200/S200StockDetail";
 import { PortfolioBacktest } from "@/components/portfolio/PortfolioBacktest";
+import { Tip } from "@/components/ui/tooltip";
 import { api } from "@/lib/api";
 import { fmtPct, fmtNum } from "@/lib/format";
 
@@ -16,6 +17,7 @@ type Horizon = "5" | "10";
 export default function S200Page() {
   const [horizon, setHorizon] = useState<Horizon>("10");
   const [selectedStockTicker, setSelectedStockTicker] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<string>("scanner");
 
   const { data: btSummary, isLoading: summaryLoading } = useQuery({
     queryKey: ["s200-backtest-summary", horizon],
@@ -50,19 +52,19 @@ export default function S200Page() {
 
   const summaryMetrics: MetricDef[] = btSummary
     ? [
-        { label: "Stocks Tested", value: btSummary.stocks_tested, variant: "accent" },
-        { label: "Total Rallies", value: btSummary.total_rallies },
-        { label: "Entered", value: btSummary.total_entered },
-        { label: "Won (Target Hit)", value: btSummary.total_hits, variant: "green" },
-        { label: "Zone Entry Rate", value: fmtNum(btSummary.zone_entry_rate_pct) + "%", variant: "amber" },
-        { label: "Win Rate", value: fmtNum(btSummary.win_rate_pct) + "%", variant: "green" },
-        { label: "Avg P/L", value: fmtPct(btSummary.avg_pnl_pct), variant: btSummary.avg_pnl_pct >= 0 ? "green" : "red" },
-        { label: "Avg Days in Trade", value: `${Math.round(btSummary.avg_days_in_trade)}d` },
+        { label: "Stocks Tested", value: btSummary.stocks_tested, variant: "accent", tooltip: "Number of S200 stocks included in this backtest" },
+        { label: "Total Rallies", value: btSummary.total_rallies, tooltip: "Count of 20%+ rally setups detected across all stocks in the period" },
+        { label: "Entered", value: btSummary.total_entered, tooltip: "Rallies where the strategy actually placed a buy (price retested the rally base)" },
+        { label: "Won (Target Hit)", value: btSummary.total_hits, variant: "green", tooltip: "Entries that reached the full rally target price" },
+        { label: "Zone Entry Rate", value: fmtNum(btSummary.zone_entry_rate_pct) + "%", variant: "amber", tooltip: "% of detected rallies where the price came back to the buy zone — measures how often setups trigger" },
+        { label: "Win Rate", value: fmtNum(btSummary.win_rate_pct) + "%", variant: "green", tooltip: "% of entered trades (not all rallies) that hit the target" },
+        { label: "Avg P/L", value: fmtPct(btSummary.avg_pnl_pct), variant: btSummary.avg_pnl_pct >= 0 ? "green" : "red", tooltip: "Average % return across all entered trades" },
+        { label: "Avg Days in Trade", value: `${Math.round(btSummary.avg_days_in_trade)}d`, tooltip: "Average holding period from entry to exit" },
       ]
     : [];
 
   return (
-    <div className="flex flex-col h-screen">
+    <div className="flex flex-col">
       {/* Page header */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
         <div>
@@ -73,39 +75,62 @@ export default function S200Page() {
         </div>
         <div className="flex gap-1 border border-border rounded-md p-0.5">
           {(["5", "10"] as Horizon[]).map((h) => (
-            <button
+            <Tip
               key={h}
-              onClick={() => setHorizon(h)}
-              className={`px-3 py-1 text-sm rounded transition-colors ${
-                horizon === h ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
-              }`}
+              content={h === "5" ? "Run the backtest using 5 years of price history" : "Run the backtest using 10 years of price history — gives more data but may include older market conditions"}
+              below
             >
-              {h}Y
-            </button>
+              <button
+                onClick={() => setHorizon(h)}
+                className={`px-3 py-1 text-sm rounded transition-colors ${
+                  horizon === h ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {h}Y
+              </button>
+            </Tip>
           ))}
         </div>
       </div>
 
-      {/* Summary metrics */}
-      <div className="px-6 py-3 border-b border-border shrink-0">
-        {summaryLoading ? (
-          <div className="text-xs text-muted-foreground">Loading metrics…</div>
-        ) : (
-          <MetricCards metrics={summaryMetrics} />
-        )}
-      </div>
+      {/* Summary metrics — hidden when Stock Analysis tab is active */}
+      {activeTab !== "analysis" && (
+        <div className="px-6 py-3 border-b border-border shrink-0">
+          {summaryLoading ? (
+            <div className="text-xs text-muted-foreground">Loading metrics…</div>
+          ) : (
+            <MetricCards metrics={summaryMetrics} />
+          )}
+        </div>
+      )}
 
       {/* Sub-tabs */}
-      <Tabs defaultValue="scanner" className="flex flex-col flex-1 overflow-hidden">
+      <Tabs defaultValue="scanner" onValueChange={setActiveTab} className="flex flex-col">
         <TabsList className="mx-6 mt-3 w-fit shrink-0">
-          <TabsTrigger value="scanner">Current Opportunities</TabsTrigger>
-          <TabsTrigger value="backtest">Backtest by Stock</TabsTrigger>
-          <TabsTrigger value="analysis">Stock Analysis</TabsTrigger>
-          <TabsTrigger value="portfolio">Portfolio Backtest</TabsTrigger>
+          <TabsTrigger value="scanner">
+            <Tip content="Live S200 stocks with active 20% rally setups — currently in or near the buy zone" below>
+              <span>Current Opportunities</span>
+            </Tip>
+          </TabsTrigger>
+          <TabsTrigger value="backtest">
+            <Tip content="Per-stock summary: how many rallies, entries, wins, and average returns" below>
+              <span>Backtest by Stock</span>
+            </Tip>
+          </TabsTrigger>
+          <TabsTrigger value="analysis">
+            <Tip content="Drill into a single stock's rally history and live setups with price chart" below>
+              <span>Stock Analysis</span>
+            </Tip>
+          </TabsTrigger>
+          <TabsTrigger value="portfolio">
+            <Tip content="Simulate the S200 rally strategy at the portfolio level with position sizing" below>
+              <span>Portfolio Backtest</span>
+            </Tip>
+          </TabsTrigger>
         </TabsList>
 
         {/* Current Opportunities */}
-        <TabsContent value="scanner" className="flex-1 overflow-y-auto px-6 py-4">
+        <TabsContent value="scanner" className="px-6 py-4">
           {scanner ? (
             <S200Scanner data={scanner} />
           ) : (
@@ -114,7 +139,7 @@ export default function S200Page() {
         </TabsContent>
 
         {/* Backtest by Stock */}
-        <TabsContent value="backtest" className="flex-1 overflow-y-auto px-6 py-4">
+        <TabsContent value="backtest" className="px-6 py-4">
           {stocksLoading ? (
             <div className="text-sm text-muted-foreground">Loading backtest data…</div>
           ) : btStocks ? (
@@ -123,13 +148,13 @@ export default function S200Page() {
         </TabsContent>
 
         {/* Stock Analysis */}
-        <TabsContent value="analysis" className="flex-1 overflow-hidden">
+        <TabsContent value="analysis" className="overflow-hidden">
           {stocksLoading ? (
-            <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
+            <div className="flex items-center justify-center h-40 text-sm text-muted-foreground">
               Loading stock data…
             </div>
           ) : (
-            <div className="flex h-full">
+            <div className="flex h-[calc(100dvh-120px)] overflow-hidden">
               <div className="w-56 shrink-0 border-r border-border overflow-hidden">
                 <S200StockList
                   overview={btStocks?.overview ?? []}
@@ -156,7 +181,7 @@ export default function S200Page() {
         </TabsContent>
 
         {/* Portfolio Backtest */}
-        <TabsContent value="portfolio" className="flex-1 overflow-y-auto px-6 py-4">
+        <TabsContent value="portfolio" className="px-6 py-4">
           {portfolioData ? (
             <PortfolioBacktest data={portfolioData} />
           ) : (

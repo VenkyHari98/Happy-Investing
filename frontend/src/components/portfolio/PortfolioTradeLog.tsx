@@ -17,6 +17,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { PortfolioTrade } from "@/lib/types";
+import { Tip } from "@/components/ui/tooltip";
 import { fmtCur, fmtPct, fmtDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -102,14 +103,19 @@ export function PortfolioTradeLog({ trades, showStrategy = false }: Props) {
     else { setSortKey(key); setSortDir("desc"); }
   }
 
-  function SortHead({ col, label, className }: { col: SortKey; label: string; className?: string }) {
+  function SortHead({ col, label, className, tip }: { col: SortKey; label: string; className?: string; tip?: string }) {
     const active = sortKey === col;
     return (
       <TableHead
         className={cn("cursor-pointer select-none hover:text-foreground whitespace-nowrap", className)}
         onClick={() => toggleSort(col)}
       >
-        {label} {active ? (sortDir === "asc" ? "↑" : "↓") : ""}
+        {tip ? (
+          <Tip content={tip} below>
+            <span className="cursor-default">{label}</span>
+          </Tip>
+        ) : label}
+        {active ? (sortDir === "asc" ? " ↑" : " ↓") : ""}
       </TableHead>
     );
   }
@@ -221,7 +227,7 @@ export function PortfolioTradeLog({ trades, showStrategy = false }: Props) {
       </div>
 
       {/* Table */}
-      <div className="rounded-md border border-border overflow-auto">
+      <div className="rounded-md border border-border">
         <Table>
           <TableHeader>
             <TableRow className="hover:bg-transparent">
@@ -229,17 +235,17 @@ export function PortfolioTradeLog({ trades, showStrategy = false }: Props) {
               <TableHead>Ticker</TableHead>
               <TableHead>Cap</TableHead>
               {showStrategy && <TableHead>Strategy</TableHead>}
-              <TableHead>Tranche</TableHead>
+              <TableHead><Tip content="Which averaging tranche this is (1 = initial entry, 2+ = averaging down at lower prices)" below><span className="cursor-default">Tranche</span></Tip></TableHead>
               <SortHead col="entry_date" label="Entry Date" />
               <TableHead className="text-right">Entry ₹</TableHead>
-              <TableHead className="text-right">Target ₹</TableHead>
+              <TableHead className="text-right"><Tip content="The fixed sell target price for this trade" below><span className="cursor-default">Target ₹</span></Tip></TableHead>
               <TableHead className="text-right">Exit Date</TableHead>
               <TableHead className="text-right">Exit ₹</TableHead>
-              <SortHead col="trade_duration_days" label="Days" className="text-right" />
-              <SortHead col="pnl_pct" label="P/L%" className="text-right" />
-              <SortHead col="pnl" label="P/L ₹" className="text-right" />
-              <SortHead col="max_drawdown_pct" label="Max DD" className="text-right" />
-              <TableHead>Outcome</TableHead>
+              <SortHead col="trade_duration_days" label="Days" className="text-right" tip="Calendar days from entry to exit — or days held so far for open trades" />
+              <SortHead col="pnl_pct" label="P/L%" className="text-right" tip="% return from entry to exit price" />
+              <SortHead col="pnl" label="P/L ₹" className="text-right" tip="₹ profit/loss based on position size allocated" />
+              <SortHead col="max_drawdown_pct" label="Max DD" className="text-right" tip="Largest intra-trade price drop below entry — how far underwater this trade went before recovery" />
+              <TableHead><Tip content="How the trade closed: TARGET_HIT (✓), EXPIRED (lapsed), OPEN (still active), STOPLOSS, EXIT_SIGNAL" below><span className="cursor-default">Outcome</span></Tip></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -317,37 +323,45 @@ export function PortfolioTradeLog({ trades, showStrategy = false }: Props) {
             {page * pageSize + 1}–{Math.min((page + 1) * pageSize, sorted.length)} of {sorted.length}
           </span>
           <div className="flex items-center gap-1">
-            <button
-              disabled={page === 0}
-              onClick={() => setPage(0)}
-              className="px-2 py-1 rounded border border-border hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
-            >
-              «
-            </button>
-            <button
-              disabled={page === 0}
-              onClick={() => setPage((p) => p - 1)}
-              className="px-2 py-1 rounded border border-border hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
-            >
-              ‹
-            </button>
+            <Tip content="First page" below>
+              <button
+                disabled={page === 0}
+                onClick={() => setPage(0)}
+                className="px-2 py-1 rounded border border-border hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                «
+              </button>
+            </Tip>
+            <Tip content="Previous page" below>
+              <button
+                disabled={page === 0}
+                onClick={() => setPage((p) => p - 1)}
+                className="px-2 py-1 rounded border border-border hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                ‹
+              </button>
+            </Tip>
             <span className="px-2">
               Page {page + 1} / {totalPages}
             </span>
-            <button
-              disabled={page >= totalPages - 1}
-              onClick={() => setPage((p) => p + 1)}
-              className="px-2 py-1 rounded border border-border hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
-            >
-              ›
-            </button>
-            <button
-              disabled={page >= totalPages - 1}
-              onClick={() => setPage(totalPages - 1)}
-              className="px-2 py-1 rounded border border-border hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
-            >
-              »
-            </button>
+            <Tip content="Next page" below>
+              <button
+                disabled={page >= totalPages - 1}
+                onClick={() => setPage((p) => p + 1)}
+                className="px-2 py-1 rounded border border-border hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                ›
+              </button>
+            </Tip>
+            <Tip content="Last page" below>
+              <button
+                disabled={page >= totalPages - 1}
+                onClick={() => setPage(totalPages - 1)}
+                className="px-2 py-1 rounded border border-border hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                »
+              </button>
+            </Tip>
           </div>
         </div>
       )}

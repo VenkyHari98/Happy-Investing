@@ -10,6 +10,7 @@ import {
 import type { S200StockOverview, S200ScannerData, S200Status } from "@/lib/types";
 import { fmtPct, fmtNum } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { Tip } from "@/components/ui/tooltip";
 
 const STATUS_COLORS: Record<S200Status, string> = {
   IN_ZONE: "bg-green-500/20 text-green-400 border-green-500/30",
@@ -17,6 +18,7 @@ const STATUS_COLORS: Record<S200Status, string> = {
   WATCHING_NEAR: "bg-blue-500/20 text-blue-400 border-blue-500/30",
   WATCHING: "bg-muted text-muted-foreground border-border",
   BELOW_BUY: "bg-rose-500/20 text-rose-400 border-rose-500/30",
+  ABOVE_DMA: "bg-muted/50 text-muted-foreground/60 border-border/50",
 };
 
 const STATUS_LABELS: Record<S200Status, string> = {
@@ -25,6 +27,7 @@ const STATUS_LABELS: Record<S200Status, string> = {
   WATCHING_NEAR: "Near",
   WATCHING: "Watching",
   BELOW_BUY: "Below Buy",
+  ABOVE_DMA: "Above 200 DMA",
 };
 
 interface Props {
@@ -152,13 +155,19 @@ export function S200StockList({ overview, scannerData, selectedTicker, onSelect 
                 {s.sector} · {s.cap_tier?.replace(" Cap", "")} · <span className="text-foreground/60">{s.watchlist_source}</span>
               </div>
               <div className="flex gap-3 mt-0.5 text-xs">
-                <span className="text-muted-foreground">{s.total_rallies}R</span>
-                <span className={cn("font-medium", s.win_rate_pct >= 70 ? "text-green-400" : "text-amber-400")}>
-                  {fmtNum(s.win_rate_pct)}%WR
-                </span>
-                <span className={cn(s.avg_pnl_pct >= 0 ? "text-green-400" : "text-red-400")}>
-                  {fmtPct(s.avg_pnl_pct)}
-                </span>
+                <Tip content={`${s.total_rallies} 20%+ rally setup${s.total_rallies !== 1 ? "s" : ""} detected for this stock in the backtest`}>
+                  <span className="text-muted-foreground">{s.total_rallies}R</span>
+                </Tip>
+                <Tip content="Win rate: % of entered trades (retests of the rally base) that hit the full target">
+                  <span className={cn("font-medium", s.win_rate_pct >= 70 ? "text-green-400" : "text-amber-400")}>
+                    {fmtNum(s.win_rate_pct)}%WR
+                  </span>
+                </Tip>
+                <Tip content="Average % return across all entered trades for this stock">
+                  <span className={cn(s.avg_pnl_pct >= 0 ? "text-green-400" : "text-red-400")}>
+                    {fmtPct(s.avg_pnl_pct)}
+                  </span>
+                </Tip>
               </div>
             </button>
           );

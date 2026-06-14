@@ -12,6 +12,7 @@ import {
 import type { EnvelopeTrade } from "@/lib/types";
 import { fmtCur, fmtPct, fmtNum } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { Tip } from "@/components/ui/tooltip";
 
 type SortKey = "ticker" | "trades" | "win_rate" | "total_pnl" | "avg_pnl";
 type SortDir = "asc" | "desc";
@@ -80,31 +81,36 @@ export function EnvelopeByStock({ trades }: Props) {
     else { setSortKey(key); setSortDir("desc"); }
   }
 
-  function SortHead({ col, label, className }: { col: SortKey; label: string; className?: string }) {
+  function SortHead({ col, label, className, tip }: { col: SortKey; label: string; className?: string; tip?: string }) {
     const active = sortKey === col;
     return (
       <TableHead
         className={cn("cursor-pointer select-none hover:text-foreground", className)}
         onClick={() => toggleSort(col)}
       >
-        {label} {active ? (sortDir === "asc" ? "↑" : "↓") : ""}
+        {tip ? (
+          <Tip content={tip} below>
+            <span className="cursor-default">{label}</span>
+          </Tip>
+        ) : label}
+        {active ? (sortDir === "asc" ? " ↑" : " ↓") : ""}
       </TableHead>
     );
   }
 
   return (
-    <div className="rounded-md border border-border overflow-auto">
+    <div className="rounded-md border border-border">
       <Table>
         <TableHeader>
           <TableRow className="hover:bg-transparent">
             <SortHead col="ticker" label="Ticker" />
             <TableHead>Cap</TableHead>
             <TableHead>Sector</TableHead>
-            <SortHead col="trades" label="Trades" className="text-right" />
-            <TableHead className="text-right">Won</TableHead>
-            <SortHead col="win_rate" label="Win Rate" className="text-right" />
-            <SortHead col="total_pnl" label="Total P/L" className="text-right" />
-            <SortHead col="avg_pnl" label="Avg P/L" className="text-right" />
+            <SortHead col="trades" label="Trades" className="text-right" tip="Total completed buy→sell cycles for this stock in the backtest" />
+            <TableHead className="text-right"><Tip content="Number of those trades that closed profitably" below><span className="cursor-default">Won</span></Tip></TableHead>
+            <SortHead col="win_rate" label="Win Rate" className="text-right" tip="% of trades that were profitable" />
+            <SortHead col="total_pnl" label="Total P/L" className="text-right" tip="Cumulative ₹ profit/loss across all trades for this stock" />
+            <SortHead col="avg_pnl" label="Avg P/L" className="text-right" tip="Average % return per trade — the best measure of consistent performance" />
           </TableRow>
         </TableHeader>
         <TableBody>

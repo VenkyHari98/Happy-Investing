@@ -13,6 +13,20 @@ import {
   type LineData,
 } from "lightweight-charts";
 
+export interface PatternOverlay {
+  patternType: "RHS" | "CWH";
+  /** Price points within the pattern date range (date + close) */
+  pricePoints: { date: string; price: number }[];
+  necklinePrice: number;
+  necklineStartDate: string;
+  necklineEndDate: string;
+  targetPrice: number;
+  targetStartDate: string;
+  targetEndDate: string;
+  /** 0–1 fill opacity; defaults to 0.22 */
+  opacity?: number;
+}
+
 export interface ChartPoint {
   time: string; // YYYY-MM-DD
   value: number;
@@ -35,6 +49,7 @@ interface StockChartProps {
   pePoints?: ChartPoint[];   // PE ratio series — rendered on left axis
   peMedian?: number | null;  // 5yr rolling median — shown as dashed price line
   markers?: TradeMarker[];
+  patternOverlays?: PatternOverlay[];
   height?: number;
   ticker?: string;
 }
@@ -90,10 +105,12 @@ export function StockChart({
   pePoints,
   peMedian,
   markers = [],
+  patternOverlays,
   height = 360,
   ticker,
 }: StockChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const priceSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   // Keep the markers plugin alive — required in lightweight-charts v5
@@ -127,6 +144,8 @@ export function StockChart({
       color: "#60a5fa",
       lineWidth: 2,
       title: "Price",
+      priceLineVisible: false,
+      lastValueVisible: false,
     });
     priceSeries.setData(prices as LineData[]);
     priceSeriesRef.current = priceSeries;
@@ -140,6 +159,8 @@ export function StockChart({
         lineWidth: 1,
         lineStyle: LineStyle.Dashed,
         title: "52W Low",
+        priceLineVisible: false,
+        lastValueVisible: false,
       });
       s.setData(w52Low as LineData[]);
     }
@@ -150,6 +171,8 @@ export function StockChart({
         lineWidth: 1,
         lineStyle: LineStyle.Dashed,
         title: "52W High",
+        priceLineVisible: false,
+        lastValueVisible: false,
       });
       s.setData(w52High as LineData[]);
     }
@@ -160,6 +183,8 @@ export function StockChart({
         lineWidth: 1,
         lineStyle: LineStyle.Dotted,
         title: "200 SMA",
+        priceLineVisible: false,
+        lastValueVisible: false,
       });
       s.setData(ma200 as LineData[]);
     }
@@ -170,6 +195,8 @@ export function StockChart({
         lineWidth: 1,
         lineStyle: LineStyle.Dashed,
         title: "Lower Env",
+        priceLineVisible: false,
+        lastValueVisible: false,
       });
       s.setData(lowerEnvelope as LineData[]);
     }
@@ -180,27 +207,31 @@ export function StockChart({
         lineWidth: 1,
         lineStyle: LineStyle.Dashed,
         title: "Upper Env",
+        priceLineVisible: false,
+        lastValueVisible: false,
       });
       s.setData(upperEnvelope as LineData[]);
     }
 
     if (pePoints?.length) {
       chart.applyOptions({
-        leftPriceScale: { visible: true, borderColor: "#374151", textColor: "#f97316" },
+        leftPriceScale: { visible: true, borderColor: "#374151", textColor: "rgba(255, 255, 255, 0.5)" },
       });
       const peSeries = chart.addSeries(LineSeries, {
         priceScaleId: "left",
-        color: "#f97316",
+        color: "rgba(255, 255, 255, 0.5)",
         lineWidth: 1,
         lineStyle: LineStyle.Dotted,
         title: "PE",
+        priceLineVisible: false,
+        lastValueVisible: false,
       });
       peSeries.setData(pePoints as LineData[]);
 
       if (peMedian != null) {
         peSeries.createPriceLine({
           price: peMedian,
-          color: "#f97316",
+          color: "rgba(255, 255, 255, 0.5)",
           lineWidth: 1,
           lineStyle: LineStyle.Dashed,
           title: "5Y Median",
@@ -234,6 +265,112 @@ export function StockChart({
     markersPluginRef.current.setMarkers(buildMarkerData(markers));
   }, [markers]);
 
+  // ── Effect 3: canvas pattern shape overlays ────────────────────────────────
+  useEffect(() => {
+    const canvas = overlayCanvasRef.current;
+    const chart = chartRef.current;
+    const series = priceSeriesRef.current;
+    if (!canvas || !chart || !series) return;
+
+    const container = containerRef.current;
+    if (!container) return;
+
+    function redraw() {
+      if (!canvas || !chart || !series) return;
+
+      const dpr = window.devicePixelRatio || 1;
+      const w = container!.clientWidth;
+      const h = height;
+      canvas.width = w * dpr;
+      canvas.height = h * dpr;
+      canvas.style.width = `${w}px`;
+      canvas.style.height = `${h}px`;
+
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.scale(dpr, dpr);
+
+      if (!patternOverlays?.length) return;
+
+      for (const overlay of patternOverlays) {
+        const opacity = overlay.opacity ?? 0.22;
+        const fillColor =
+          overlay.patternType === "RHS"
+            ? `rgba(249,115,22,${opacity})`
+            : `rgba(59,130,246,${opacity})`;
+
+        const neckYCoord = series.priceToCoordinate(overlay.necklinePrice);
+        if (neckYCoord === null) continue;
+        const neckY = neckYCoord as number;
+
+        // Collect valid price path points within pattern range
+        const rawPts = overlay.pricePoints.map((p) => ({
+          x: chart.timeScale().timeToCoordinate(p.date as Time),
+          y: series.priceToCoordinate(p.price),
+        }));
+        const pts = rawPts
+          .filter((p) => p.x !== null && p.y !== null)
+          .map((p) => ({ x: p.x as number, y: p.y as number }));
+
+        if (pts.length < 2) continue;
+
+        const x0 = pts[0].x;
+        const xN = pts[pts.length - 1].x;
+
+        // ── Filled polygon: neckline (top) → price series (bottom) ──
+        ctx.beginPath();
+        ctx.moveTo(x0, neckY);
+        ctx.lineTo(xN, neckY);
+        for (let i = pts.length - 1; i >= 0; i--) {
+          ctx.lineTo(pts[i].x, pts[i].y);
+        }
+        ctx.closePath();
+        ctx.fillStyle = fillColor;
+        ctx.fill();
+
+        // ── Neckline dashed line ──────────────────────────────────────
+        const neckXStartCoord = chart.timeScale().timeToCoordinate(overlay.necklineStartDate as Time);
+        const neckXEndCoord = chart.timeScale().timeToCoordinate(overlay.necklineEndDate as Time);
+        if (neckXStartCoord !== null && neckXEndCoord !== null) {
+          ctx.beginPath();
+          ctx.setLineDash([6, 4]);
+          ctx.lineWidth = 1.5;
+          ctx.strokeStyle = `rgba(245,158,11,${Math.min(opacity * 3.5, 0.9)})`;
+          ctx.moveTo(neckXStartCoord as number, neckY);
+          ctx.lineTo(neckXEndCoord as number, neckY);
+          ctx.stroke();
+        }
+
+        // ── Target dashed line ─────────────────────────────────────────
+        const targetYCoord = series.priceToCoordinate(overlay.targetPrice);
+        const tgtXStartCoord = chart.timeScale().timeToCoordinate(overlay.targetStartDate as Time);
+        const tgtXEndCoord = chart.timeScale().timeToCoordinate(overlay.targetEndDate as Time);
+        if (targetYCoord !== null && tgtXStartCoord !== null && tgtXEndCoord !== null) {
+          ctx.beginPath();
+          ctx.setLineDash([8, 5]);
+          ctx.lineWidth = 1.5;
+          ctx.strokeStyle = `rgba(34,197,94,${Math.min(opacity * 3.5, 0.85)})`;
+          ctx.moveTo(tgtXStartCoord as number, targetYCoord as number);
+          ctx.lineTo(tgtXEndCoord as number, targetYCoord as number);
+          ctx.stroke();
+        }
+
+        ctx.setLineDash([]);
+      }
+    }
+
+    redraw();
+    chart.timeScale().subscribeVisibleLogicalRangeChange(redraw);
+
+    return () => {
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(redraw);
+      const ctx = canvas.getContext("2d");
+      if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [patternOverlays, height]);
+
   if (prices.length === 0) {
     return (
       <div className="relative w-full">
@@ -252,6 +389,11 @@ export function StockChart({
   return (
     <div className="relative w-full">
       <div ref={containerRef} style={{ height }} className="w-full" />
+      {/* Canvas overlay for pattern shape fills — sits above chart, no pointer events */}
+      <canvas
+        ref={overlayCanvasRef}
+        style={{ position: "absolute", top: 0, left: 0, pointerEvents: "none" }}
+      />
       {tvSymbol && (
         // Transparent overlay covering the TradingView watermark (bottom-left of the canvas).
         // Makes the native watermark act as a link to the stock page without visual changes.

@@ -19,6 +19,7 @@ import {
 import type { EnvelopeTrade } from "@/lib/types";
 import { fmtCur, fmtPct, fmtDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { Tip } from "@/components/ui/tooltip";
 
 type SortKey = "entry_date" | "pnl_pct" | "net_pnl" | "trade_duration_days";
 type SortDir = "asc" | "desc";
@@ -68,14 +69,19 @@ export function EnvelopeTradesTable({ trades }: Props) {
     else { setSortKey(key); setSortDir("desc"); }
   }
 
-  function SortHead({ col, label, className }: { col: SortKey; label: string; className?: string }) {
+  function SortHead({ col, label, className, tip }: { col: SortKey; label: string; className?: string; tip?: string }) {
     const active = sortKey === col;
     return (
       <TableHead
         className={cn("cursor-pointer select-none hover:text-foreground", className)}
         onClick={() => toggleSort(col)}
       >
-        {label} {active ? (sortDir === "asc" ? "↑" : "↓") : ""}
+        {tip ? (
+          <Tip content={tip} below>
+            <span className="cursor-default">{label}</span>
+          </Tip>
+        ) : label}
+        {active ? (sortDir === "asc" ? " ↑" : " ↓") : ""}
       </TableHead>
     );
   }
@@ -124,22 +130,22 @@ export function EnvelopeTradesTable({ trades }: Props) {
       </div>
 
       {/* Table */}
-      <div className="rounded-md border border-border overflow-auto">
+      <div className="rounded-md border border-border">
         <Table>
           <TableHeader>
             <TableRow className="hover:bg-transparent">
               <TableHead>Ticker</TableHead>
               <TableHead>Cap</TableHead>
               <TableHead>Sector</TableHead>
-              <SortHead col="entry_date" label="Entry Date" />
+              <SortHead col="entry_date" label="Entry Date" tip="Date the strategy bought (entered the lower envelope zone)" />
               <TableHead className="text-right">Entry ₹</TableHead>
-              <TableHead className="text-right">Exit Date</TableHead>
+              <TableHead className="text-right"><Tip content="Date the strategy sold (upper envelope, 200 SMA reversion, or stop-loss)" below><span className="cursor-default">Exit Date</span></Tip></TableHead>
               <TableHead className="text-right">Exit ₹</TableHead>
-              <SortHead col="trade_duration_days" label="Days" className="text-right" />
-              <TableHead className="text-right">Alloc%</TableHead>
-              <SortHead col="pnl_pct" label="P/L%" className="text-right" />
-              <SortHead col="net_pnl" label="Net P/L" className="text-right" />
-              <TableHead>Exit Reason</TableHead>
+              <SortHead col="trade_duration_days" label="Days" className="text-right" tip="Calendar days this trade was held" />
+              <TableHead className="text-right"><Tip content="% of total portfolio capital allocated to this specific trade" below><span className="cursor-default">Alloc%</span></Tip></TableHead>
+              <SortHead col="pnl_pct" label="P/L%" className="text-right" tip="% return from entry to exit" />
+              <SortHead col="net_pnl" label="Net P/L" className="text-right" tip="₹ profit/loss for this trade at the allocated position size" />
+              <TableHead><Tip content="How the trade closed: ENV_EXIT = hit upper band, STOP_LOSS = stop triggered, OPEN = still active" below><span className="cursor-default">Exit Reason</span></Tip></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
