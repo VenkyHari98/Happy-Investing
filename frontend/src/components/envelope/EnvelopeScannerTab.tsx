@@ -1,5 +1,5 @@
 "use client";
-import { Fragment, useState, useMemo } from "react";
+import { Fragment, useState, useMemo, useCallback } from "react";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -22,6 +22,8 @@ import { cn } from "@/lib/utils";
 import { Tip } from "@/components/ui/tooltip";
 import { FundDetails } from "@/components/shared/FundDetails";
 import { getFundBadge, getFundStatus, type FundStatus } from "@/lib/fundBadge";
+import { useSort } from "@/lib/useSort";
+import { SortArrow, SORTABLE_TH_CLASS } from "@/components/shared/SortArrow";
 
 // Long and Short are two independent tracks, each measured from their own
 // band (lower for Long, upper for Short) — a stock's Short-side distance has
@@ -136,10 +138,13 @@ export function EnvelopeScannerTab({ rows, runDate, envelopePct = 14 }: Envelope
     }, {});
   }, [baseFiltered, signalFilter]);
 
-  const filtered = useMemo(() => {
-    let t = baseFiltered;
-    if (statusFilter !== "ALL") t = t.filter((r) => getEnvStatusForFilter(r, signalFilter).status === statusFilter);
-    return [...t].sort((a, b) => {
+  const statusFiltered = useMemo(() => {
+    if (statusFilter === "ALL") return baseFiltered;
+    return baseFiltered.filter((r) => getEnvStatusForFilter(r, signalFilter).status === statusFilter);
+  }, [baseFiltered, statusFilter, signalFilter]);
+
+  const presetSorted = useMemo(() => {
+    return [...statusFiltered].sort((a, b) => {
       const ra = getEnvStatusForFilter(a, signalFilter), rb = getEnvStatusForFilter(b, signalFilter);
       if (STATUS_ORDER[ra.status] !== STATUS_ORDER[rb.status]) return STATUS_ORDER[ra.status] - STATUS_ORDER[rb.status];
       // Sort by normalized distance (more negative = deeper past the trigger, better)
@@ -147,7 +152,33 @@ export function EnvelopeScannerTab({ rows, runDate, envelopePct = 14 }: Envelope
       const db = rb.direction === "LONG" ? (b.distance_to_lower_envelope_pct ?? 999) : -(b.distance_to_upper_envelope_pct ?? 999);
       return da - db;
     });
-  }, [baseFiltered, statusFilter, signalFilter]);
+  }, [statusFiltered, signalFilter]);
+
+  // Clicking a column header overrides the default status+distance sort above.
+  const getSortValue = useCallback((row: ScannerRow, key: string): unknown => {
+    const entry = row.lower_envelope;
+    switch (key) {
+      case "ticker": return row.ticker;
+      case "status": return STATUS_ORDER[getEnvStatusForFilter(row, signalFilter).status];
+      case "sector": return row.sector;
+      case "cap": return row.cap_tier;
+      case "close": return row.close;
+      case "sma": return row.ma;
+      case "lower_env": return row.lower_envelope;
+      case "dist_lower": return row.distance_to_lower_envelope_pct;
+      case "upper_env": return row.upper_envelope;
+      case "pot_gain": return row.distance_to_upper_envelope_pct != null ? Math.abs(row.distance_to_upper_envelope_pct) : null;
+      case "abcd_a": return entry != null ? entry * 0.90 : null;
+      case "abcd_b": return entry != null ? entry * 0.81 : null;
+      case "abcd_c": return entry != null ? entry * 0.729 : null;
+      case "pe": return row.pe_current;
+      case "5yr_pe": return row.pe_5yr_avg;
+      case "fundamentals": return { pass: 2, no_data: 1, fail: 0 }[getFundStatus(row)];
+      default: return null;
+    }
+  }, [signalFilter]);
+  const { sorted: columnSorted, sortKey, sortDir, toggleSort } = useSort(presetSorted, getSortValue);
+  const filtered = sortKey ? columnSorted : presetSorted;
 
   return (
     <div className="space-y-4">
@@ -271,46 +302,78 @@ export function EnvelopeScannerTab({ rows, runDate, envelopePct = 14 }: Envelope
         <Table>
           <TableHeader>
             <TableRow className="hover:bg-transparent">
-              <TableHead>Ticker</TableHead>
-              <TableHead><Tip content="How close this stock is to the envelope buy zone" below><span className="cursor-default">Status</span></Tip></TableHead>
-              <TableHead>Sector</TableHead>
-              <TableHead>Cap</TableHead>
-              <TableHead className="text-right">Close ₹</TableHead>
-              <TableHead className="text-right"><Tip content="200-day simple moving average — the centre line of the envelope band" below><span className="cursor-default">200 SMA ₹</span></Tip></TableHead>
-              <TableHead className="text-right">
+              <TableHead className={SORTABLE_TH_CLASS} onClick={() => toggleSort("ticker")}>
+                Ticker<SortArrow active={sortKey === "ticker"} dir={sortDir} />
+              </TableHead>
+              <TableHead className={SORTABLE_TH_CLASS} onClick={() => toggleSort("status")}>
+                <Tip content="How close this stock is to the envelope buy zone" below><span className="cursor-default">Status</span></Tip>
+                <SortArrow active={sortKey === "status"} dir={sortDir} />
+              </TableHead>
+              <TableHead className={SORTABLE_TH_CLASS} onClick={() => toggleSort("sector")}>
+                Sector<SortArrow active={sortKey === "sector"} dir={sortDir} />
+              </TableHead>
+              <TableHead className={SORTABLE_TH_CLASS} onClick={() => toggleSort("cap")}>
+                Cap<SortArrow active={sortKey === "cap"} dir={sortDir} />
+              </TableHead>
+              <TableHead className={cn("text-right", SORTABLE_TH_CLASS)} onClick={() => toggleSort("close")}>
+                Close ₹<SortArrow active={sortKey === "close"} dir={sortDir} />
+              </TableHead>
+              <TableHead className={cn("text-right", SORTABLE_TH_CLASS)} onClick={() => toggleSort("sma")}>
+                <Tip content="200-day simple moving average — the centre line of the envelope band" below><span className="cursor-default">200 SMA ₹</span></Tip>
+                <SortArrow active={sortKey === "sma"} dir={sortDir} />
+              </TableHead>
+              <TableHead className={cn("text-right", SORTABLE_TH_CLASS)} onClick={() => toggleSort("lower_env")}>
                 <Tip content={`Lower envelope band: ${envelopePct}% below the 200 SMA — the strategy's buy trigger level`} below>
                   <span className="cursor-default">Lower Env<br /><span className="text-[10px] font-normal text-muted-foreground">−{envelopePct}%</span></span>
                 </Tip>
+                <SortArrow active={sortKey === "lower_env"} dir={sortDir} />
               </TableHead>
-              <TableHead className="text-right min-w-[110px]"><Tip content="How far above the lower envelope the current price is. 0% or negative = in buy zone" below><span className="cursor-default">Dist to Lower</span></Tip></TableHead>
-              <TableHead className="text-right">
+              <TableHead className={cn("text-right min-w-[110px]", SORTABLE_TH_CLASS)} onClick={() => toggleSort("dist_lower")}>
+                <Tip content="How far above the lower envelope the current price is. 0% or negative = in buy zone" below><span className="cursor-default">Dist to Lower</span></Tip>
+                <SortArrow active={sortKey === "dist_lower"} dir={sortDir} />
+              </TableHead>
+              <TableHead className={cn("text-right", SORTABLE_TH_CLASS)} onClick={() => toggleSort("upper_env")}>
                 <Tip content={`Upper envelope band: ${envelopePct}% above the 200 SMA — the strategy's sell target`} below>
                   <span className="cursor-default">Upper Env<br /><span className="text-[10px] font-normal text-muted-foreground">+{envelopePct}%</span></span>
                 </Tip>
+                <SortArrow active={sortKey === "upper_env"} dir={sortDir} />
               </TableHead>
-              <TableHead className="text-right">
+              <TableHead className={cn("text-right", SORTABLE_TH_CLASS)} onClick={() => toggleSort("pot_gain")}>
                 <Tip content="Potential upside from current price to the upper envelope (expected profit if bought now)" below>
                   <span className="cursor-default">Pot. Gain<br /><span className="text-[10px] font-normal text-muted-foreground">to Upper</span></span>
                 </Tip>
+                <SortArrow active={sortKey === "pot_gain"} dir={sortDir} />
               </TableHead>
-              <TableHead className="text-right">
+              <TableHead className={cn("text-right", SORTABLE_TH_CLASS)} onClick={() => toggleSort("abcd_a")}>
                 <Tip content="ABCD Averaging tranche A: if bought at the lower envelope and the stock falls further, this is the 2nd buy level — 10% below the initial entry (50% of the tranche allocation)" below>
                   ABCD-A<br /><span className="text-[10px] text-muted-foreground font-normal">−10%</span>
                 </Tip>
+                <SortArrow active={sortKey === "abcd_a"} dir={sortDir} />
               </TableHead>
-              <TableHead className="text-right">
+              <TableHead className={cn("text-right", SORTABLE_TH_CLASS)} onClick={() => toggleSort("abcd_b")}>
                 <Tip content="ABCD tranche B: 3rd averaging level — 19% below the initial entry (33% of the tranche allocation)" below>
                   ABCD-B<br /><span className="text-[10px] text-muted-foreground font-normal">−19%</span>
                 </Tip>
+                <SortArrow active={sortKey === "abcd_b"} dir={sortDir} />
               </TableHead>
-              <TableHead className="text-right">
+              <TableHead className={cn("text-right", SORTABLE_TH_CLASS)} onClick={() => toggleSort("abcd_c")}>
                 <Tip content="ABCD tranche C: 4th (deepest) averaging level — 27.1% below the initial entry (25% of the tranche allocation)" below>
                   ABCD-C<br /><span className="text-[10px] text-muted-foreground font-normal">−27.1%</span>
                 </Tip>
+                <SortArrow active={sortKey === "abcd_c"} dir={sortDir} />
               </TableHead>
-              <TableHead className="text-right"><Tip content="Current Price-to-Earnings ratio" below><span className="cursor-default">PE</span></Tip></TableHead>
-              <TableHead className="text-right"><Tip content="5-year average PE — compare with current to judge if the stock is historically cheap" below><span className="cursor-default">5yr PE</span></Tip></TableHead>
-              <TableHead><Tip content="Whether the stock passes the fundamental quality screen (ROCE, ROE, D/E, OPM, PE checks)" below><span className="cursor-default">Fundamentals</span></Tip></TableHead>
+              <TableHead className={cn("text-right", SORTABLE_TH_CLASS)} onClick={() => toggleSort("pe")}>
+                <Tip content="Current Price-to-Earnings ratio" below><span className="cursor-default">PE</span></Tip>
+                <SortArrow active={sortKey === "pe"} dir={sortDir} />
+              </TableHead>
+              <TableHead className={cn("text-right", SORTABLE_TH_CLASS)} onClick={() => toggleSort("5yr_pe")}>
+                <Tip content="5-year average PE — compare with current to judge if the stock is historically cheap" below><span className="cursor-default">5yr PE</span></Tip>
+                <SortArrow active={sortKey === "5yr_pe"} dir={sortDir} />
+              </TableHead>
+              <TableHead className={SORTABLE_TH_CLASS} onClick={() => toggleSort("fundamentals")}>
+                <Tip content="Whether the stock passes the fundamental quality screen (ROCE, ROE, D/E, OPM, PE checks)" below><span className="cursor-default">Fundamentals</span></Tip>
+                <SortArrow active={sortKey === "fundamentals"} dir={sortDir} />
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>

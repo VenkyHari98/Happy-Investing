@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useCallback } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Tip } from "@/components/ui/tooltip";
 import {
@@ -22,6 +22,8 @@ import { fmtCur, fmtNum } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { FundDetails } from "@/components/shared/FundDetails";
 import { getFundBadge, getFundStatus, type FundStatus } from "@/lib/fundBadge";
+import { useSort } from "@/lib/useSort";
+import { SortArrow, SORTABLE_TH_CLASS } from "@/components/shared/SortArrow";
 
 // ── Status (from backend status_52w field) ────────────────────────────────────
 type Status52W = "IN_ZONE" | "APPROACHING" | "WATCHING_NEAR" | "WATCHING" | "BELOW_BUY";
@@ -143,10 +145,13 @@ export function ScannerTab({ rows, runDate }: ScannerTabProps) {
     }, {});
   }, [baseFiltered]);
 
-  const sorted = useMemo(() => {
-    let t = baseFiltered;
-    if (statusFilter !== "ALL") t = t.filter((r) => getStatus52W(r) === statusFilter);
-    return [...t].sort((a, b) => {
+  const statusFiltered = useMemo(() => {
+    if (statusFilter === "ALL") return baseFiltered;
+    return baseFiltered.filter((r) => getStatus52W(r) === statusFilter);
+  }, [baseFiltered, statusFilter]);
+
+  const presetSorted = useMemo(() => {
+    return [...statusFiltered].sort((a, b) => {
       if (sortOption === "zone") {
         const sa = STATUS_ORDER[getStatus52W(a)] ?? 9;
         const sb = STATUS_ORDER[getStatus52W(b)] ?? 9;
@@ -165,7 +170,30 @@ export function ScannerTab({ rows, runDate }: ScannerTabProps) {
       if (sortOption === "ticker_az") return a.ticker.localeCompare(b.ticker);
       return 0;
     });
-  }, [baseFiltered, statusFilter, sortOption]);
+  }, [statusFiltered, sortOption]);
+
+  // Clicking a column header overrides the preset dropdown sort above.
+  const getSortValue = useCallback((row: ScannerRow, key: string): unknown => {
+    switch (key) {
+      case "ticker": return row.ticker;
+      case "status": return STATUS_ORDER[getStatus52W(row)];
+      case "signals": return (row.signals ?? []).length;
+      case "sector": return row.sector;
+      case "cap": return row.cap_tier;
+      case "close": return row.close;
+      case "52w_low": return row["52w_low"];
+      case "dist_to_low": return row.distance_to_52w_low_pct;
+      case "52w_high": return row["52w_high"];
+      case "pot_gain": return row.distance_to_52w_high_pct != null ? Math.abs(row.distance_to_52w_high_pct) : null;
+      case "200_dma": return row.ma;
+      case "pe": return row.pe_current;
+      case "5yr_pe": return row.pe_5yr_avg;
+      case "fundamentals": return { pass: 2, no_data: 1, fail: 0 }[getFundStatus(row)];
+      default: return null;
+    }
+  }, []);
+  const { sorted: columnSorted, sortKey, sortDir, toggleSort } = useSort(presetSorted, getSortValue);
+  const sorted = sortKey ? columnSorted : presetSorted;
 
   return (
     <div className="space-y-4">
@@ -289,59 +317,77 @@ export function ScannerTab({ rows, runDate }: ScannerTabProps) {
         <Table>
           <TableHeader>
             <TableRow className="hover:bg-transparent">
-              <TableHead>Ticker</TableHead>
-              <TableHead>
+              <TableHead className={SORTABLE_TH_CLASS} onClick={() => toggleSort("ticker")}>
+                Ticker<SortArrow active={sortKey === "ticker"} dir={sortDir} />
+              </TableHead>
+              <TableHead className={SORTABLE_TH_CLASS} onClick={() => toggleSort("status")}>
                 <Tip content="Where this stock sits relative to its 52-week rolling low (computed by the scanner)" below>
                   <span className="cursor-default">Status</span>
                 </Tip>
+                <SortArrow active={sortKey === "status"} dir={sortDir} />
               </TableHead>
-              <TableHead>
+              <TableHead className={SORTABLE_TH_CLASS} onClick={() => toggleSort("signals")}>
                 <Tip content="Active scanner signals: 52W Low ↓ means buy candidate, 52W High ↑ means near sell territory" below>
                   <span className="cursor-default">Signals</span>
                 </Tip>
+                <SortArrow active={sortKey === "signals"} dir={sortDir} />
               </TableHead>
-              <TableHead>Sector</TableHead>
-              <TableHead>Cap</TableHead>
-              <TableHead className="text-right">Close</TableHead>
-              <TableHead className="text-right">
+              <TableHead className={SORTABLE_TH_CLASS} onClick={() => toggleSort("sector")}>
+                Sector<SortArrow active={sortKey === "sector"} dir={sortDir} />
+              </TableHead>
+              <TableHead className={SORTABLE_TH_CLASS} onClick={() => toggleSort("cap")}>
+                Cap<SortArrow active={sortKey === "cap"} dir={sortDir} />
+              </TableHead>
+              <TableHead className={cn("text-right", SORTABLE_TH_CLASS)} onClick={() => toggleSort("close")}>
+                Close<SortArrow active={sortKey === "close"} dir={sortDir} />
+              </TableHead>
+              <TableHead className={cn("text-right", SORTABLE_TH_CLASS)} onClick={() => toggleSort("52w_low")}>
                 <Tip content="Rolling 52-week low — the strategy's buy trigger level" below>
                   <span className="cursor-default">52W Low</span>
                 </Tip>
+                <SortArrow active={sortKey === "52w_low"} dir={sortDir} />
               </TableHead>
-              <TableHead className="text-right min-w-[100px]">
+              <TableHead className={cn("text-right min-w-[100px]", SORTABLE_TH_CLASS)} onClick={() => toggleSort("dist_to_low")}>
                 <Tip content="How far above the 52W low the current price is. 0% = at the low (buy zone). Lower is better for entry" below>
                   <span className="cursor-default">Dist to Low</span>
                 </Tip>
+                <SortArrow active={sortKey === "dist_to_low"} dir={sortDir} />
               </TableHead>
-              <TableHead className="text-right">
+              <TableHead className={cn("text-right", SORTABLE_TH_CLASS)} onClick={() => toggleSort("52w_high")}>
                 <Tip content="Rolling 52-week high — this becomes the fixed sell target when the strategy buys" below>
                   <span className="cursor-default">52W High</span>
                 </Tip>
+                <SortArrow active={sortKey === "52w_high"} dir={sortDir} />
               </TableHead>
-              <TableHead className="text-right">
+              <TableHead className={cn("text-right", SORTABLE_TH_CLASS)} onClick={() => toggleSort("pot_gain")}>
                 <Tip content="Potential upside from current price to the 52W high. This is the expected gain if the strategy buys now and the target is hit" below>
                   <span className="cursor-default">Pot. Gain</span>
                 </Tip>
+                <SortArrow active={sortKey === "pot_gain"} dir={sortDir} />
               </TableHead>
-              <TableHead className="text-right">
+              <TableHead className={cn("text-right", SORTABLE_TH_CLASS)} onClick={() => toggleSort("200_dma")}>
                 <Tip content="200-day moving average — a key trend indicator. Price near the DMA often signals a recovery zone" below>
                   <span className="cursor-default">200 DMA</span>
                 </Tip>
+                <SortArrow active={sortKey === "200_dma"} dir={sortDir} />
               </TableHead>
-              <TableHead className="text-right">
+              <TableHead className={cn("text-right", SORTABLE_TH_CLASS)} onClick={() => toggleSort("pe")}>
                 <Tip content="Current Price-to-Earnings ratio — compare with 5Yr average to judge if the stock is cheap or expensive" below>
                   <span className="cursor-default">PE</span>
                 </Tip>
+                <SortArrow active={sortKey === "pe"} dir={sortDir} />
               </TableHead>
-              <TableHead className="text-right">
+              <TableHead className={cn("text-right", SORTABLE_TH_CLASS)} onClick={() => toggleSort("5yr_pe")}>
                 <Tip content="5-year average PE — a long-term valuation benchmark. Current PE below this suggests the stock may be historically cheap" below>
                   <span className="cursor-default">5Yr PE</span>
                 </Tip>
+                <SortArrow active={sortKey === "5yr_pe"} dir={sortDir} />
               </TableHead>
-              <TableHead>
+              <TableHead className={SORTABLE_TH_CLASS} onClick={() => toggleSort("fundamentals")}>
                 <Tip content="Whether the stock passes the fundamental quality screen (ROCE, ROE, D/E, OPM, PE checks)" below>
                   <span className="cursor-default">Fundamentals</span>
                 </Tip>
+                <SortArrow active={sortKey === "fundamentals"} dir={sortDir} />
               </TableHead>
             </TableRow>
           </TableHeader>

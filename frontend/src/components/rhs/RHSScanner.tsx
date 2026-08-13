@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { fmtCur } from "@/lib/format";
 import { Tip } from "@/components/ui/tooltip";
@@ -13,6 +13,8 @@ import {
 import type { RHSScannerData, RHSOpportunity } from "@/lib/types";
 import { FundDetails } from "@/components/shared/FundDetails";
 import { getFundBadge, getFundStatus, type FundStatus } from "@/lib/fundBadge";
+import { useSort } from "@/lib/useSort";
+import { SortArrow, SORTABLE_TH_CLASS } from "@/components/shared/SortArrow";
 
 const STATUS_STYLE: Record<string, string> = {
   BREAKOUT: "bg-green-500/15 text-green-400 border border-green-500/30",
@@ -28,9 +30,6 @@ function calcUpside(opp: RHSOpportunity): number {
   return (opp.target - opp.current_price) / opp.current_price * 100;
 }
 
-type SortKey = "default" | "upside" | "pct_to_neckline" | "cap_tier" | "ticker";
-type SortDir = "asc" | "desc";
-
 interface Props {
   data: RHSScannerData;
   onSelectTicker?: (ticker: string) => void;
@@ -44,8 +43,6 @@ export function RHSScanner({ data, onSelectTicker }: Props) {
   const [sector, setSector] = useState("ALL");
   const [fundFilter, setFundFilter] = useState<FundStatus | "ALL">("ALL");
   const [dmaOnly, setDmaOnly] = useState(false);
-  const [sortKey, setSortKey] = useState<SortKey>("default");
-  const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
 
   const { opportunities } = data;
@@ -67,21 +64,38 @@ export function RHSScanner({ data, onSelectTicker }: Props) {
     return t;
   }, [opportunities, patternFilter, statusFilter, search, cap, sector, fundFilter, dmaOnly]);
 
-  const sorted = useMemo(() => {
+  // Baseline (no column clicked yet): BREAKOUT first, then closest to/past neckline
+  const presetSorted = useMemo(() => {
     return [...filtered].sort((a, b) => {
-      // Default: BREAKOUT first, then by pct_to_neckline ascending (closest to/past breakout)
-      if (sortKey === "default") {
-        if (a.status !== b.status) return a.status === "BREAKOUT" ? -1 : 1;
-        return a.pct_to_neckline - b.pct_to_neckline;
-      }
-      let cmp = 0;
-      if (sortKey === "upside")          cmp = calcUpside(a) - calcUpside(b);
-      else if (sortKey === "pct_to_neckline") cmp = a.pct_to_neckline - b.pct_to_neckline;
-      else if (sortKey === "cap_tier")   cmp = a.cap_tier.localeCompare(b.cap_tier);
-      else if (sortKey === "ticker")     cmp = a.ticker.localeCompare(b.ticker);
-      return sortDir === "asc" ? cmp : -cmp;
+      if (a.status !== b.status) return a.status === "BREAKOUT" ? -1 : 1;
+      return a.pct_to_neckline - b.pct_to_neckline;
     });
-  }, [filtered, sortKey, sortDir]);
+  }, [filtered]);
+
+  const getSortValue = useCallback((opp: RHSOpportunity, key: string): unknown => {
+    switch (key) {
+      case "ticker": return opp.ticker;
+      case "pattern_type": return opp.pattern_type;
+      case "status": return opp.status;
+      case "price": return opp.current_price;
+      case "neckline": return opp.neckline;
+      case "pct_to_neckline": return opp.pct_to_neckline;
+      case "target": return opp.target;
+      case "upside": return calcUpside(opp);
+      case "pattern_start": return opp.pattern_start_date;
+      case "cap_tier": return opp.cap_tier;
+      case "pe": return opp.pe_current;
+      case "5yr_pe": return opp.pe_5yr_avg;
+      case "fundamentals": return { pass: 2, no_data: 1, fail: 0 }[getFundStatus(opp)];
+      default: return null;
+    }
+  }, []);
+  const { sorted: columnSorted, sortKey, sortDir, toggleSort, clearSort } = useSort(presetSorted, getSortValue);
+  const sorted = sortKey ? columnSorted : presetSorted;
+
+  function sortArrow(col: string) {
+    return <SortArrow active={sortKey === col} dir={sortDir} />;
+  }
 
   const counts = useMemo(() => {
     const base = opportunities.filter((o) =>
@@ -94,20 +108,6 @@ export function RHSScanner({ data, onSelectTicker }: Props) {
       forming:  base.filter((o) => o.status === "FORMING").length,
     };
   }, [opportunities, patternFilter]);
-
-  function toggleSort(key: SortKey) {
-    if (sortKey === key) {
-      setSortDir((d) => d === "asc" ? "desc" : "asc");
-    } else {
-      setSortKey(key);
-      setSortDir(key === "upside" ? "desc" : "asc");
-    }
-  }
-
-  function sortArrow(col: SortKey) {
-    if (sortKey !== col) return <span className="ml-0.5 opacity-30">↕</span>;
-    return <span className="ml-0.5 opacity-80">{sortDir === "asc" ? "↑" : "↓"}</span>;
-  }
 
   return (
     <div className="space-y-4">
@@ -231,10 +231,10 @@ export function RHSScanner({ data, onSelectTicker }: Props) {
           </Select>
         </Tip>
         <button
-          onClick={() => { setSortKey("default"); setSortDir("asc"); }}
+          onClick={clearSort}
           className={cn(
             "px-3 py-1 rounded text-xs font-medium border transition-colors",
-            sortKey === "default"
+            sortKey === null
               ? "bg-primary/10 text-primary border-primary/30"
               : "bg-muted/40 text-muted-foreground border-border hover:bg-muted"
           )}
@@ -272,42 +272,87 @@ export function RHSScanner({ data, onSelectTicker }: Props) {
             <thead>
               <tr className="bg-muted/30 border-b border-border">
                 <th
-                  className="text-left px-3 py-2 font-medium text-muted-foreground cursor-pointer hover:text-foreground select-none"
-                  onClick={() => toggleSort("ticker")}
+                  className={cn("text-left px-3 py-2 font-medium text-muted-foreground select-none", SORTABLE_TH_CLASS)}
+                  onClick={() => toggleSort("ticker", "asc")}
                 >
                   Ticker {sortArrow("ticker")}
                 </th>
-                <th className="text-left px-3 py-2 font-medium text-muted-foreground">Pattern</th>
-                <th className="text-left px-3 py-2 font-medium text-muted-foreground">Status</th>
-                <th className="text-right px-3 py-2 font-medium text-muted-foreground">Price</th>
-                <th className="text-right px-3 py-2 font-medium text-muted-foreground">Neckline</th>
                 <th
-                  className="text-right px-3 py-2 font-medium text-muted-foreground cursor-pointer hover:text-foreground select-none"
-                  onClick={() => toggleSort("pct_to_neckline")}
+                  className={cn("text-left px-3 py-2 font-medium text-muted-foreground select-none", SORTABLE_TH_CLASS)}
+                  onClick={() => toggleSort("pattern_type", "asc")}
+                >
+                  Pattern {sortArrow("pattern_type")}
+                </th>
+                <th
+                  className={cn("text-left px-3 py-2 font-medium text-muted-foreground select-none", SORTABLE_TH_CLASS)}
+                  onClick={() => toggleSort("status", "asc")}
+                >
+                  Status {sortArrow("status")}
+                </th>
+                <th
+                  className={cn("text-right px-3 py-2 font-medium text-muted-foreground select-none", SORTABLE_TH_CLASS)}
+                  onClick={() => toggleSort("price")}
+                >
+                  Price {sortArrow("price")}
+                </th>
+                <th
+                  className={cn("text-right px-3 py-2 font-medium text-muted-foreground select-none", SORTABLE_TH_CLASS)}
+                  onClick={() => toggleSort("neckline")}
+                >
+                  Neckline {sortArrow("neckline")}
+                </th>
+                <th
+                  className={cn("text-right px-3 py-2 font-medium text-muted-foreground select-none", SORTABLE_TH_CLASS)}
+                  onClick={() => toggleSort("pct_to_neckline", "asc")}
                 >
                   <Tip content="% distance from current price to the neckline. Negative = already past neckline (breakout territory)" below>
                     <span>% to Neckline {sortArrow("pct_to_neckline")}</span>
                   </Tip>
                 </th>
-                <th className="text-right px-3 py-2 font-medium text-muted-foreground">Target</th>
                 <th
-                  className="text-right px-3 py-2 font-medium text-muted-foreground cursor-pointer hover:text-foreground select-none"
+                  className={cn("text-right px-3 py-2 font-medium text-muted-foreground select-none", SORTABLE_TH_CLASS)}
+                  onClick={() => toggleSort("target")}
+                >
+                  Target {sortArrow("target")}
+                </th>
+                <th
+                  className={cn("text-right px-3 py-2 font-medium text-muted-foreground select-none", SORTABLE_TH_CLASS)}
                   onClick={() => toggleSort("upside")}
                 >
                   <Tip content="Remaining % upside from current price to the pattern target. Click to sort." below>
                     <span>Upside {sortArrow("upside")}</span>
                   </Tip>
                 </th>
-                <th className="text-left px-3 py-2 font-medium text-muted-foreground">Pattern Start</th>
                 <th
-                  className="text-left px-3 py-2 font-medium text-muted-foreground cursor-pointer hover:text-foreground select-none"
-                  onClick={() => toggleSort("cap_tier")}
+                  className={cn("text-left px-3 py-2 font-medium text-muted-foreground select-none", SORTABLE_TH_CLASS)}
+                  onClick={() => toggleSort("pattern_start", "asc")}
+                >
+                  Pattern Start {sortArrow("pattern_start")}
+                </th>
+                <th
+                  className={cn("text-left px-3 py-2 font-medium text-muted-foreground select-none", SORTABLE_TH_CLASS)}
+                  onClick={() => toggleSort("cap_tier", "asc")}
                 >
                   Cap {sortArrow("cap_tier")}
                 </th>
-                <th className="text-right px-3 py-2 font-medium text-muted-foreground">PE</th>
-                <th className="text-right px-3 py-2 font-medium text-muted-foreground">5yr PE</th>
-                <th className="text-left px-3 py-2 font-medium text-muted-foreground">Fundamentals</th>
+                <th
+                  className={cn("text-right px-3 py-2 font-medium text-muted-foreground select-none", SORTABLE_TH_CLASS)}
+                  onClick={() => toggleSort("pe")}
+                >
+                  PE {sortArrow("pe")}
+                </th>
+                <th
+                  className={cn("text-right px-3 py-2 font-medium text-muted-foreground select-none", SORTABLE_TH_CLASS)}
+                  onClick={() => toggleSort("5yr_pe")}
+                >
+                  5yr PE {sortArrow("5yr_pe")}
+                </th>
+                <th
+                  className={cn("text-left px-3 py-2 font-medium text-muted-foreground select-none", SORTABLE_TH_CLASS)}
+                  onClick={() => toggleSort("fundamentals", "asc")}
+                >
+                  Fundamentals {sortArrow("fundamentals")}
+                </th>
               </tr>
             </thead>
             <tbody>

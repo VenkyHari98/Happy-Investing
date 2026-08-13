@@ -1,5 +1,5 @@
 "use client";
-import { useState, useMemo, type ReactNode } from "react";
+import { useState, useMemo, useCallback, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -11,6 +11,8 @@ import { getProximityStatus, PROXIMITY_LABELS, type ScannerRow, type S200Rally, 
 import { StaleBanner } from "@/components/shared/StaleBanner";
 import { cn } from "@/lib/utils";
 import { getFundStatus, type FundStatus } from "@/lib/fundBadge";
+import { useSort } from "@/lib/useSort";
+import { SortArrow, SORTABLE_TH_CLASS } from "@/components/shared/SortArrow";
 
 // ── Unified signal shape ──────────────────────────────────────────────────────
 
@@ -211,32 +213,42 @@ function StatusPill({ statusKey, label }: { statusKey: string; label: string }) 
 // ── Signal table ──────────────────────────────────────────────────────────────
 
 function SignalTable({ signals }: { signals: UnifiedSignal[] }) {
-  const [sortCol, setSortCol] = useState<"status" | "ticker" | "metric">("status");
-  const [sortAsc, setSortAsc] = useState(true);
+  // Baseline (no column clicked yet): status priority, then ticker A-Z
+  const presetSorted = useMemo(() => {
+    return [...signals].sort((a, b) => a.statusPriority - b.statusPriority || a.ticker.localeCompare(b.ticker));
+  }, [signals]);
 
-  const sorted = useMemo(() => {
-    return [...signals].sort((a, b) => {
-      let cmp = 0;
-      if (sortCol === "status") cmp = a.statusPriority - b.statusPriority || a.ticker.localeCompare(b.ticker);
-      else if (sortCol === "ticker") cmp = a.ticker.localeCompare(b.ticker);
-      else if (sortCol === "metric") cmp = a.keyValue - b.keyValue;
-      return sortAsc ? cmp : -cmp;
-    });
-  }, [signals, sortCol, sortAsc]);
+  const getSortValue = useCallback((s: UnifiedSignal, key: string): unknown => {
+    switch (key) {
+      case "ticker": return s.ticker;
+      case "strategy": return s.strategy;
+      case "status": return s.statusPriority;
+      case "sector": return s.sector;
+      case "cap": return s.cap_tier;
+      case "metric": return s.keyValue;
+      case "price": return s.current_price;
+      case "entry": return s.entry_price;
+      case "target": return s.target_price;
+      case "fund": return s.fund_all_pass;
+      default: return null;
+    }
+  }, []);
+  const { sorted: columnSorted, sortKey, sortDir, toggleSort } = useSort(presetSorted, getSortValue);
+  const sorted = sortKey ? columnSorted : presetSorted;
 
-  function toggle(col: "status" | "ticker" | "metric") {
-    if (sortCol === col) setSortAsc((v) => !v);
-    else { setSortCol(col); setSortAsc(true); }
-  }
-
-  function sortableTh(col: "status" | "ticker" | "metric", children: ReactNode) {
+  function sortableTh(col: string, children: ReactNode, align: "left" | "right" | "center" = "left", initialDir: "asc" | "desc" = "asc") {
     return (
       <th
-        onClick={() => toggle(col)}
-        className="pb-2 pr-4 text-left text-muted-foreground font-medium cursor-pointer hover:text-foreground select-none whitespace-nowrap"
+        onClick={() => toggleSort(col, initialDir)}
+        className={cn(
+          "pb-2 pr-4 font-medium select-none whitespace-nowrap",
+          align === "right" ? "text-right" : align === "center" ? "text-center" : "text-left",
+          sortKey === col ? "text-foreground" : "text-muted-foreground",
+          SORTABLE_TH_CLASS
+        )}
       >
         {children}
-        {sortCol === col && <span className="ml-1 text-primary">{sortAsc ? "↑" : "↓"}</span>}
+        <SortArrow active={sortKey === col} dir={sortDir} />
       </th>
     );
   }
@@ -251,39 +263,39 @@ function SignalTable({ signals }: { signals: UnifiedSignal[] }) {
         <thead className="sticky top-0 z-10 bg-background">
           <tr className="border-b border-border text-xs">
             {sortableTh("ticker", "Ticker")}
-            <th className="pb-2 pr-4 text-left text-muted-foreground font-medium whitespace-nowrap">
+            {sortableTh("strategy", (
               <Tip content="Which strategy flagged this stock: 52W = 52-week Low/High, S200 = 20% Rally" below>
                 <span className="cursor-default">Strategy</span>
               </Tip>
-            </th>
+            ))}
             {sortableTh("status", (
               <Tip content="How close the stock is to the strategy's buy zone right now" below>
                 <span className="cursor-default">Status</span>
               </Tip>
             ))}
-            <th className="pb-2 pr-4 text-left text-muted-foreground font-medium">Sector</th>
-            <th className="pb-2 pr-4 text-left text-muted-foreground font-medium">Cap</th>
+            {sortableTh("sector", "Sector")}
+            {sortableTh("cap", "Cap")}
             {sortableTh("metric", (
               <Tip content="The most relevant number for this signal (distance to low for 52W, remaining gain for S200)" below>
                 <span className="cursor-default">Key Metric</span>
               </Tip>
-            ))}
-            <th className="pb-2 pr-4 text-right text-muted-foreground font-medium whitespace-nowrap">Price</th>
-            <th className="pb-2 pr-4 text-right text-muted-foreground font-medium whitespace-nowrap">
+            ), "left", "desc")}
+            {sortableTh("price", "Price", "right", "desc")}
+            {sortableTh("entry", (
               <Tip content="Buy/support/neckline/lower-envelope level, depending on the strategy" below>
                 <span className="cursor-default">Entry</span>
               </Tip>
-            </th>
-            <th className="pb-2 pr-4 text-right text-muted-foreground font-medium whitespace-nowrap">
+            ), "right", "desc")}
+            {sortableTh("target", (
               <Tip content="Sell target/resistance/upper-envelope level, depending on the strategy" below>
                 <span className="cursor-default">Target</span>
               </Tip>
-            </th>
-            <th className="pb-2 pr-4 text-center text-muted-foreground font-medium whitespace-nowrap">
+            ), "right", "desc")}
+            {sortableTh("fund", (
               <Tip content="Whether this stock passes every Must-Have fundamental gate (ROCE/ROE, Net D/E, PE, pledge, public shareholding, sales/profit ATH, OPM trend)" below>
                 <span className="cursor-default">Fund</span>
               </Tip>
-            </th>
+            ), "center")}
             <th className="pb-2 text-right text-muted-foreground font-medium">
               <Tip content="Click to open the full analysis for this stock in its strategy tab" below>
                 <span className="cursor-default">Go To</span>

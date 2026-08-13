@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useCallback } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -17,12 +17,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { SRScannerData, SRStatus } from "@/lib/types";
+import type { SROpportunity, SRScannerData, SRStatus } from "@/lib/types";
 import { fmtCur, fmtPct, fmtNum } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { Tip } from "@/components/ui/tooltip";
 import { FundDetails } from "@/components/shared/FundDetails";
 import { getFundBadge, getFundStatus, type FundStatus } from "@/lib/fundBadge";
+import { useSort } from "@/lib/useSort";
+import { SortArrow, SORTABLE_TH_CLASS } from "@/components/shared/SortArrow";
 
 const STATUS_COLORS: Record<SRStatus, string> = {
   IN_ZONE:   "bg-green-500/20 text-green-400 border-green-500/30",
@@ -87,7 +89,7 @@ export function SRScanner({ data }: Props) {
     return t;
   }, [data.opportunities, filter, search, sector, cap, watchlist, fundFilter, dmaOnly]);
 
-  const sorted = useMemo(() => {
+  const presetSorted = useMemo(() => {
     return [...filtered].sort((a, b) => {
       if (sortOption === "status") {
         const oa = STATUS_ORDER[a.status] ?? 9, ob = STATUS_ORDER[b.status] ?? 9;
@@ -104,6 +106,30 @@ export function SRScanner({ data }: Props) {
       return 0;
     });
   }, [filtered, sortOption]);
+
+  // Clicking a column header overrides the preset dropdown sort above.
+  const getSortValue = useCallback((r: SROpportunity, key: string): unknown => {
+    switch (key) {
+      case "ticker": return r.ticker;
+      case "source": return r.watchlist_source ?? "S200";
+      case "cap": return r.cap_tier;
+      case "sector": return r.sector;
+      case "status": return STATUS_ORDER[r.status];
+      case "price": return r.current_price;
+      case "support": return r.support_level;
+      case "dist_support": return Math.abs(r.dist_to_support_pct);
+      case "touches": return r.touch_count;
+      case "resistance": return r.resistance_level;
+      case "rem_gain": return r.remaining_gain_pct;
+      case "dma": return r.ma200;
+      case "pe": return r.pe_current;
+      case "abcd_b": return r.abcd_b_level;
+      case "fundamentals": return { pass: 2, no_data: 1, fail: 0 }[getFundStatus(r)];
+      default: return null;
+    }
+  }, []);
+  const { sorted: columnSorted, sortKey, sortDir, toggleSort } = useSort(presetSorted, getSortValue);
+  const sorted = sortKey ? columnSorted : presetSorted;
 
   return (
     <div className="space-y-4">
@@ -246,21 +272,60 @@ export function SRScanner({ data }: Props) {
         <Table>
           <TableHeader>
             <TableRow className="hover:bg-transparent">
-              <TableHead>Ticker</TableHead>
-              <TableHead><Tip content="Which watchlist this stock belongs to: F40 (fundamentally strong), E40 (extended), or S200 (growth universe)" below><span className="cursor-default">Source</span></Tip></TableHead>
-              <TableHead>Cap</TableHead>
-              <TableHead>Sector</TableHead>
-              <TableHead><Tip content="At Support = 3rd+ approach to a validated (≥2 touch) zone, below 200 DMA. Watching = still building conviction (1 prior touch) or not currently near the zone." below><span className="cursor-default">Status</span></Tip></TableHead>
-              <TableHead className="text-right">Price</TableHead>
-              <TableHead className="text-right"><Tip content="The detected support zone level — buy at this price. Notes: minimum 2 touches to be a valid level." below><span className="cursor-default">Support</span></Tip></TableHead>
-              <TableHead className="text-right min-w-[90px]"><Tip content="How far current price is from the support level, as a %. Negative = price is below support." below><span className="cursor-default">Dist to Support</span></Tip></TableHead>
-              <TableHead className="text-right"><Tip content="Number of confirmed times the stock has bounced off this level in the trailing 5 years — higher = more conviction (bus analogy: 2nd time confirms, 3rd time is the trade)" below><span className="cursor-default">Touches</span></Tip></TableHead>
-              <TableHead className="text-right"><Tip content="The nearest validated resistance zone above support — sell target" below><span className="cursor-default">Resistance ₹</span></Tip></TableHead>
-              <TableHead className="text-right"><Tip content="Remaining % upside from current price to the resistance target" below><span className="cursor-default">Rem. Gain</span></Tip></TableHead>
-              <TableHead className="text-right"><Tip content="200-day moving average — the support zone must sit below this to be a valid buy per the strategy rules" below><span className="cursor-default">200 DMA</span></Tip></TableHead>
-              <TableHead className="text-right">PE</TableHead>
-              <TableHead className="text-right"><Tip content="Informational only (no simulated averaging yet): the -10% ABCD reference price if the stock falls below support" below><span className="cursor-default">ABCD (B)</span></Tip></TableHead>
-              <TableHead>Fundamentals</TableHead>
+              <TableHead className={SORTABLE_TH_CLASS} onClick={() => toggleSort("ticker")}>
+                Ticker<SortArrow active={sortKey === "ticker"} dir={sortDir} />
+              </TableHead>
+              <TableHead className={SORTABLE_TH_CLASS} onClick={() => toggleSort("source")}>
+                <Tip content="Which watchlist this stock belongs to: F40 (fundamentally strong), E40 (extended), or S200 (growth universe)" below><span className="cursor-default">Source</span></Tip>
+                <SortArrow active={sortKey === "source"} dir={sortDir} />
+              </TableHead>
+              <TableHead className={SORTABLE_TH_CLASS} onClick={() => toggleSort("cap")}>
+                Cap<SortArrow active={sortKey === "cap"} dir={sortDir} />
+              </TableHead>
+              <TableHead className={SORTABLE_TH_CLASS} onClick={() => toggleSort("sector")}>
+                Sector<SortArrow active={sortKey === "sector"} dir={sortDir} />
+              </TableHead>
+              <TableHead className={SORTABLE_TH_CLASS} onClick={() => toggleSort("status")}>
+                <Tip content="At Support = 3rd+ approach to a validated (≥2 touch) zone, below 200 DMA. Watching = still building conviction (1 prior touch) or not currently near the zone." below><span className="cursor-default">Status</span></Tip>
+                <SortArrow active={sortKey === "status"} dir={sortDir} />
+              </TableHead>
+              <TableHead className={cn("text-right", SORTABLE_TH_CLASS)} onClick={() => toggleSort("price")}>
+                Price<SortArrow active={sortKey === "price"} dir={sortDir} />
+              </TableHead>
+              <TableHead className={cn("text-right", SORTABLE_TH_CLASS)} onClick={() => toggleSort("support")}>
+                <Tip content="The detected support zone level — buy at this price. Notes: minimum 2 touches to be a valid level." below><span className="cursor-default">Support</span></Tip>
+                <SortArrow active={sortKey === "support"} dir={sortDir} />
+              </TableHead>
+              <TableHead className={cn("text-right min-w-[90px]", SORTABLE_TH_CLASS)} onClick={() => toggleSort("dist_support")}>
+                <Tip content="How far current price is from the support level, as a %. Negative = price is below support." below><span className="cursor-default">Dist to Support</span></Tip>
+                <SortArrow active={sortKey === "dist_support"} dir={sortDir} />
+              </TableHead>
+              <TableHead className={cn("text-right", SORTABLE_TH_CLASS)} onClick={() => toggleSort("touches")}>
+                <Tip content="Number of confirmed times the stock has bounced off this level in the trailing 5 years — higher = more conviction (bus analogy: 2nd time confirms, 3rd time is the trade)" below><span className="cursor-default">Touches</span></Tip>
+                <SortArrow active={sortKey === "touches"} dir={sortDir} />
+              </TableHead>
+              <TableHead className={cn("text-right", SORTABLE_TH_CLASS)} onClick={() => toggleSort("resistance")}>
+                <Tip content="The nearest validated resistance zone above support — sell target" below><span className="cursor-default">Resistance ₹</span></Tip>
+                <SortArrow active={sortKey === "resistance"} dir={sortDir} />
+              </TableHead>
+              <TableHead className={cn("text-right", SORTABLE_TH_CLASS)} onClick={() => toggleSort("rem_gain")}>
+                <Tip content="Remaining % upside from current price to the resistance target" below><span className="cursor-default">Rem. Gain</span></Tip>
+                <SortArrow active={sortKey === "rem_gain"} dir={sortDir} />
+              </TableHead>
+              <TableHead className={cn("text-right", SORTABLE_TH_CLASS)} onClick={() => toggleSort("dma")}>
+                <Tip content="200-day moving average — the support zone must sit below this to be a valid buy per the strategy rules" below><span className="cursor-default">200 DMA</span></Tip>
+                <SortArrow active={sortKey === "dma"} dir={sortDir} />
+              </TableHead>
+              <TableHead className={cn("text-right", SORTABLE_TH_CLASS)} onClick={() => toggleSort("pe")}>
+                PE<SortArrow active={sortKey === "pe"} dir={sortDir} />
+              </TableHead>
+              <TableHead className={cn("text-right", SORTABLE_TH_CLASS)} onClick={() => toggleSort("abcd_b")}>
+                <Tip content="Informational only (no simulated averaging yet): the -10% ABCD reference price if the stock falls below support" below><span className="cursor-default">ABCD (B)</span></Tip>
+                <SortArrow active={sortKey === "abcd_b"} dir={sortDir} />
+              </TableHead>
+              <TableHead className={SORTABLE_TH_CLASS} onClick={() => toggleSort("fundamentals")}>
+                Fundamentals<SortArrow active={sortKey === "fundamentals"} dir={sortDir} />
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>

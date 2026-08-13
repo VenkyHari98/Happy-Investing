@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useCallback } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -17,12 +17,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { S200ScannerData, S200Status } from "@/lib/types";
+import type { S200Rally, S200ScannerData, S200Status } from "@/lib/types";
 import { fmtCur, fmtPct, fmtDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { Tip } from "@/components/ui/tooltip";
 import { FundDetails } from "@/components/shared/FundDetails";
 import { getFundBadge, getFundStatus, type FundStatus } from "@/lib/fundBadge";
+import { useSort } from "@/lib/useSort";
+import { SortArrow, SORTABLE_TH_CLASS } from "@/components/shared/SortArrow";
 
 const STATUS_COLORS: Record<S200Status, string> = {
   IN_ZONE:       "bg-green-500/20 text-green-400 border-green-500/30",
@@ -97,7 +99,7 @@ export function S200Scanner({ data }: Props) {
     return t;
   }, [data.rallies, filter, search, sector, cap, watchlist, dmaOnly, fundFilter]);
 
-  const sorted = useMemo(() => {
+  const presetSorted = useMemo(() => {
     return [...filtered].sort((a, b) => {
       // dist_to_buy_zone_pct is signed (negative when price has already fallen
       // below the buy zone) — "closest to zone" always means smallest absolute
@@ -119,6 +121,34 @@ export function S200Scanner({ data }: Props) {
       return 0;
     });
   }, [filtered, sortOption]);
+
+  // Clicking a column header overrides the preset dropdown sort above.
+  const getSortValue = useCallback((r: S200Rally, key: string): unknown => {
+    switch (key) {
+      case "ticker": return r.ticker;
+      case "source": return r.watchlist_source ?? "S200";
+      case "cap": return r.cap_tier;
+      case "sector": return r.sector;
+      case "status": return STATUS_ORDER[r.status];
+      case "price": return r.current_price;
+      case "buy_zone": return r.buy_zone_low;
+      case "dist_zone": return r.dist_to_buy_zone_pct != null ? Math.abs(r.dist_to_buy_zone_pct) : null;
+      case "target": return r.sell_price;
+      case "rem_gain": return r.remaining_gain_pct;
+      case "rally_pct": return r.rally_pct;
+      case "candles": return r.candle_count;
+      case "rally_peak": return r.rally_end_date ?? r.rally_start_date;
+      case "expiry": return r.expiry_date;
+      case "days_left": return r.days_to_expiry;
+      case "dma": return r.ma200;
+      case "pe": return r.pe_current;
+      case "5yr_pe": return r.pe_5yr_avg;
+      case "fundamentals": return { pass: 2, no_data: 1, fail: 0 }[getFundStatus(r)];
+      default: return null;
+    }
+  }, []);
+  const { sorted: columnSorted, sortKey, sortDir, toggleSort } = useSort(presetSorted, getSortValue);
+  const sorted = sortKey ? columnSorted : presetSorted;
 
   return (
     <div className="space-y-4">
@@ -311,25 +341,77 @@ export function S200Scanner({ data }: Props) {
         <Table>
           <TableHeader>
             <TableRow className="hover:bg-transparent">
-              <TableHead>Ticker</TableHead>
-              <TableHead><Tip content="Which watchlist this stock belongs to: F40 (fundamentally strong), E40 (extended), or S200 (growth universe)" below><span className="cursor-default">Source</span></Tip></TableHead>
-              <TableHead>Cap</TableHead>
-              <TableHead>Sector</TableHead>
-              <TableHead><Tip content="Where the stock currently sits relative to the rally buy zone" below><span className="cursor-default">Status</span></Tip></TableHead>
-              <TableHead className="text-right">Price</TableHead>
-              <TableHead className="text-right"><Tip content="The price range to buy at: the rally base ± the entry band" below><span className="cursor-default">Buy Zone</span></Tip></TableHead>
-              <TableHead className="text-right min-w-[90px]"><Tip content="How far above the buy zone the current price is. 'In zone' = currently at the buy level" below><span className="cursor-default">Dist to Zone</span></Tip></TableHead>
-              <TableHead className="text-right"><Tip content="The full rally target price — where the strategy aims to sell" below><span className="cursor-default">Target ₹</span></Tip></TableHead>
-              <TableHead className="text-right"><Tip content="Remaining % upside from current price to the target — how much profit is still available" below><span className="cursor-default">Rem. Gain</span></Tip></TableHead>
-              <TableHead className="text-right"><Tip content="The size of the original 20%+ rally that created this setup" below><span className="cursor-default">Rally%</span></Tip></TableHead>
-              <TableHead className="text-right"><Tip content="Number of price bars (days) the rally took from base to peak" below><span className="cursor-default">Candles</span></Tip></TableHead>
-              <TableHead className="text-right"><Tip content="Date when the original rally peaked (highest price of the rally)" below><span className="cursor-default">Rally Peak</span></Tip></TableHead>
-              <TableHead className="text-right"><Tip content="Date when this rally setup expires — price must enter the buy zone before this date" below><span className="cursor-default">Expiry</span></Tip></TableHead>
-              <TableHead className="text-right"><Tip content="Calendar days remaining before the setup expires" below><span className="cursor-default">Days Left</span></Tip></TableHead>
-              <TableHead className="text-right"><Tip content="200-day moving average — a key trend filter for the strategy" below><span className="cursor-default">200 DMA</span></Tip></TableHead>
-              <TableHead className="text-right"><Tip content="Current Price-to-Earnings ratio" below><span className="cursor-default">PE</span></Tip></TableHead>
-              <TableHead className="text-right"><Tip content="5-year average PE — compare with current to judge if the stock is historically cheap" below><span className="cursor-default">5yr PE</span></Tip></TableHead>
-              <TableHead>Fundamentals</TableHead>
+              <TableHead className={SORTABLE_TH_CLASS} onClick={() => toggleSort("ticker")}>
+                Ticker<SortArrow active={sortKey === "ticker"} dir={sortDir} />
+              </TableHead>
+              <TableHead className={SORTABLE_TH_CLASS} onClick={() => toggleSort("source")}>
+                <Tip content="Which watchlist this stock belongs to: F40 (fundamentally strong), E40 (extended), or S200 (growth universe)" below><span className="cursor-default">Source</span></Tip>
+                <SortArrow active={sortKey === "source"} dir={sortDir} />
+              </TableHead>
+              <TableHead className={SORTABLE_TH_CLASS} onClick={() => toggleSort("cap")}>
+                Cap<SortArrow active={sortKey === "cap"} dir={sortDir} />
+              </TableHead>
+              <TableHead className={SORTABLE_TH_CLASS} onClick={() => toggleSort("sector")}>
+                Sector<SortArrow active={sortKey === "sector"} dir={sortDir} />
+              </TableHead>
+              <TableHead className={SORTABLE_TH_CLASS} onClick={() => toggleSort("status")}>
+                <Tip content="Where the stock currently sits relative to the rally buy zone" below><span className="cursor-default">Status</span></Tip>
+                <SortArrow active={sortKey === "status"} dir={sortDir} />
+              </TableHead>
+              <TableHead className={cn("text-right", SORTABLE_TH_CLASS)} onClick={() => toggleSort("price")}>
+                Price<SortArrow active={sortKey === "price"} dir={sortDir} />
+              </TableHead>
+              <TableHead className={cn("text-right", SORTABLE_TH_CLASS)} onClick={() => toggleSort("buy_zone")}>
+                <Tip content="The price range to buy at: the rally base ± the entry band" below><span className="cursor-default">Buy Zone</span></Tip>
+                <SortArrow active={sortKey === "buy_zone"} dir={sortDir} />
+              </TableHead>
+              <TableHead className={cn("text-right min-w-[90px]", SORTABLE_TH_CLASS)} onClick={() => toggleSort("dist_zone")}>
+                <Tip content="How far above the buy zone the current price is. 'In zone' = currently at the buy level" below><span className="cursor-default">Dist to Zone</span></Tip>
+                <SortArrow active={sortKey === "dist_zone"} dir={sortDir} />
+              </TableHead>
+              <TableHead className={cn("text-right", SORTABLE_TH_CLASS)} onClick={() => toggleSort("target")}>
+                <Tip content="The full rally target price — where the strategy aims to sell" below><span className="cursor-default">Target ₹</span></Tip>
+                <SortArrow active={sortKey === "target"} dir={sortDir} />
+              </TableHead>
+              <TableHead className={cn("text-right", SORTABLE_TH_CLASS)} onClick={() => toggleSort("rem_gain")}>
+                <Tip content="Remaining % upside from current price to the target — how much profit is still available" below><span className="cursor-default">Rem. Gain</span></Tip>
+                <SortArrow active={sortKey === "rem_gain"} dir={sortDir} />
+              </TableHead>
+              <TableHead className={cn("text-right", SORTABLE_TH_CLASS)} onClick={() => toggleSort("rally_pct")}>
+                <Tip content="The size of the original 20%+ rally that created this setup" below><span className="cursor-default">Rally%</span></Tip>
+                <SortArrow active={sortKey === "rally_pct"} dir={sortDir} />
+              </TableHead>
+              <TableHead className={cn("text-right", SORTABLE_TH_CLASS)} onClick={() => toggleSort("candles")}>
+                <Tip content="Number of price bars (days) the rally took from base to peak" below><span className="cursor-default">Candles</span></Tip>
+                <SortArrow active={sortKey === "candles"} dir={sortDir} />
+              </TableHead>
+              <TableHead className={cn("text-right", SORTABLE_TH_CLASS)} onClick={() => toggleSort("rally_peak")}>
+                <Tip content="Date when the original rally peaked (highest price of the rally)" below><span className="cursor-default">Rally Peak</span></Tip>
+                <SortArrow active={sortKey === "rally_peak"} dir={sortDir} />
+              </TableHead>
+              <TableHead className={cn("text-right", SORTABLE_TH_CLASS)} onClick={() => toggleSort("expiry")}>
+                <Tip content="Date when this rally setup expires — price must enter the buy zone before this date" below><span className="cursor-default">Expiry</span></Tip>
+                <SortArrow active={sortKey === "expiry"} dir={sortDir} />
+              </TableHead>
+              <TableHead className={cn("text-right", SORTABLE_TH_CLASS)} onClick={() => toggleSort("days_left")}>
+                <Tip content="Calendar days remaining before the setup expires" below><span className="cursor-default">Days Left</span></Tip>
+                <SortArrow active={sortKey === "days_left"} dir={sortDir} />
+              </TableHead>
+              <TableHead className={cn("text-right", SORTABLE_TH_CLASS)} onClick={() => toggleSort("dma")}>
+                <Tip content="200-day moving average — a key trend filter for the strategy" below><span className="cursor-default">200 DMA</span></Tip>
+                <SortArrow active={sortKey === "dma"} dir={sortDir} />
+              </TableHead>
+              <TableHead className={cn("text-right", SORTABLE_TH_CLASS)} onClick={() => toggleSort("pe")}>
+                <Tip content="Current Price-to-Earnings ratio" below><span className="cursor-default">PE</span></Tip>
+                <SortArrow active={sortKey === "pe"} dir={sortDir} />
+              </TableHead>
+              <TableHead className={cn("text-right", SORTABLE_TH_CLASS)} onClick={() => toggleSort("5yr_pe")}>
+                <Tip content="5-year average PE — compare with current to judge if the stock is historically cheap" below><span className="cursor-default">5yr PE</span></Tip>
+                <SortArrow active={sortKey === "5yr_pe"} dir={sortDir} />
+              </TableHead>
+              <TableHead className={SORTABLE_TH_CLASS} onClick={() => toggleSort("fundamentals")}>
+                Fundamentals<SortArrow active={sortKey === "fundamentals"} dir={sortDir} />
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
