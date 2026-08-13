@@ -121,6 +121,7 @@ export function SRScanner({ data }: Props) {
       case "touches": return r.touch_count;
       case "resistance": return r.resistance_level;
       case "rem_gain": return r.remaining_gain_pct;
+      case "zone_gain": return r.zone_gain_pct;
       case "dma": return r.ma200;
       case "pe": return r.pe_current;
       case "abcd_b": return r.abcd_b_level;
@@ -134,12 +135,12 @@ export function SRScanner({ data }: Props) {
   return (
     <div className="space-y-4">
       {/* Metric cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+      <div className="grid grid-cols-2 sm:grid-cols-6 gap-2">
         {ACTIVE_STATUSES.map((s) => {
           const count = data.status_counts[s] ?? 0;
           const isActive = count > 0;
           const statusTip = s === "IN_ZONE"
-            ? "Price is within 2% of a validated support zone (≥2 prior touches) and below the 200 DMA — the strategy's buy zone"
+            ? "Price is within 1.5% of a validated support zone (≥2 prior touches) and below the 200 DMA — the strategy's buy zone"
             : "Support zone detected but either only 1 confirmed prior touch (still building conviction) or price isn't currently near it";
           return (
             <Tip key={s} content={statusTip} below>
@@ -178,6 +179,16 @@ export function SRScanner({ data }: Props) {
             </CardContent>
           </Card>
         </Tip>
+        {data.filtered_low_gain_count != null && (
+          <Tip content="Setups with no confirmed resistance target, or whose fixed support→resistance return doesn't clear the cap-tier minimum (Large Cap ≥20%, Mid/Small Cap ≥30%) — dropped before they ever reach this table" below>
+            <Card className="bg-card/40 w-full opacity-70">
+              <CardContent className="px-3 py-2">
+                <p className="text-xs text-muted-foreground">Filtered (Low Gain)</p>
+                <p className="text-xl font-semibold">{data.filtered_low_gain_count}</p>
+              </CardContent>
+            </Card>
+          </Tip>
+        )}
         <Tip content="When the scanner data was last refreshed" below>
           <div className="flex flex-col items-center px-3 py-2 rounded border border-border bg-card/60 w-full">
             <span className="text-xs text-muted-foreground">Run Date</span>
@@ -293,7 +304,7 @@ export function SRScanner({ data }: Props) {
                 Price<SortArrow active={sortKey === "price"} dir={sortDir} />
               </TableHead>
               <TableHead className={cn("text-right", SORTABLE_TH_CLASS)} onClick={() => toggleSort("support")}>
-                <Tip content="The detected support zone level — buy at this price. Notes: minimum 2 touches to be a valid level." below><span className="cursor-default">Support</span></Tip>
+                <Tip content="The detected support zone level — buy at this price. Prices within ±1.5% cluster into the same zone; minimum 2 touches to be a valid level." below><span className="cursor-default">Support</span></Tip>
                 <SortArrow active={sortKey === "support"} dir={sortDir} />
               </TableHead>
               <TableHead className={cn("text-right min-w-[90px]", SORTABLE_TH_CLASS)} onClick={() => toggleSort("dist_support")}>
@@ -305,11 +316,15 @@ export function SRScanner({ data }: Props) {
                 <SortArrow active={sortKey === "touches"} dir={sortDir} />
               </TableHead>
               <TableHead className={cn("text-right", SORTABLE_TH_CLASS)} onClick={() => toggleSort("resistance")}>
-                <Tip content="The nearest validated resistance zone above support — sell target" below><span className="cursor-default">Resistance ₹</span></Tip>
+                <Tip content="The nearest validated resistance zone above support — sell target (±1.5% band, same as support)" below><span className="cursor-default">Resistance ₹</span></Tip>
                 <SortArrow active={sortKey === "resistance"} dir={sortDir} />
               </TableHead>
+              <TableHead className={cn("text-right", SORTABLE_TH_CLASS)} onClick={() => toggleSort("zone_gain")}>
+                <Tip content="Fixed support→resistance return — a property of the zone itself, not today's price. Every row here already clears its cap-tier minimum (Large Cap ≥20%, Mid/Small Cap ≥30%); setups below that are dropped before they reach this table." below><span className="cursor-default">Zone Gain</span></Tip>
+                <SortArrow active={sortKey === "zone_gain"} dir={sortDir} />
+              </TableHead>
               <TableHead className={cn("text-right", SORTABLE_TH_CLASS)} onClick={() => toggleSort("rem_gain")}>
-                <Tip content="Remaining % upside from current price to the resistance target" below><span className="cursor-default">Rem. Gain</span></Tip>
+                <Tip content="Remaining % upside from today's price to the resistance target — moves daily as price moves, unlike Zone Gain" below><span className="cursor-default">Rem. Gain</span></Tip>
                 <SortArrow active={sortKey === "rem_gain"} dir={sortDir} />
               </TableHead>
               <TableHead className={cn("text-right", SORTABLE_TH_CLASS)} onClick={() => toggleSort("dma")}>
@@ -371,6 +386,9 @@ export function SRScanner({ data }: Props) {
                     <TableCell className="text-right tabular-nums text-purple-400">
                       {r.resistance_level != null ? fmtCur(r.resistance_level) : "—"}
                     </TableCell>
+                    <TableCell className="text-right tabular-nums text-amber-300 font-semibold">
+                      {r.zone_gain_pct != null ? fmtPct(r.zone_gain_pct) : "—"}
+                    </TableCell>
                     <TableCell className="text-right tabular-nums text-green-400 font-medium">
                       {r.remaining_gain_pct != null ? fmtPct(r.remaining_gain_pct) : "—"}
                     </TableCell>
@@ -391,7 +409,7 @@ export function SRScanner({ data }: Props) {
                   </TableRow>
                   {isExpanded && (
                     <TableRow className="hover:bg-transparent">
-                      <TableCell colSpan={15} className="p-0">
+                      <TableCell colSpan={16} className="p-0">
                         <FundDetails row={r} />
                       </TableCell>
                     </TableRow>
@@ -401,7 +419,7 @@ export function SRScanner({ data }: Props) {
             })}
             {sorted.length === 0 && (
               <TableRow>
-                <TableCell colSpan={15} className="text-center text-muted-foreground py-8">
+                <TableCell colSpan={16} className="text-center text-muted-foreground py-8">
                   No setups match this filter
                 </TableCell>
               </TableRow>

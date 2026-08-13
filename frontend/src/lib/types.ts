@@ -692,12 +692,21 @@ export interface SROpportunity extends FundamentalFields {
   current_price: number;
   ma200: number | null;
   support_level: number;
+  support_zone_low: number;
+  support_zone_high: number;
   resistance_level: number | null;
+  resistance_zone_low: number | null;
+  resistance_zone_high: number | null;
   touch_count: number;
   abcd_b_level: number;
   status: SRStatus;
   dist_to_support_pct: number;
   remaining_gain_pct: number | null;
+  // Fixed support->resistance return (not today's-price-based like
+  // remaining_gain_pct) — every row already clears its cap-tier minimum
+  // (Large Cap >=20%, Mid/Small Cap >=30%), since the scanner drops anything
+  // below that threshold before it ever reaches this JSON.
+  zone_gain_pct: number | null;
   below_200dma: boolean;
   pe_current: number | null;
   pe_5yr_avg: number | null;
@@ -707,6 +716,7 @@ export interface SRScannerData {
   run_date: string;
   stocks_scanned: number;
   total_found: number;
+  filtered_low_gain_count?: number;
   status_counts: Record<string, number>;
   source_counts?: Record<string, number>;
   opportunities: SROpportunity[];

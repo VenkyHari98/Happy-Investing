@@ -50,6 +50,37 @@ def check_fall_from_high(cap_tier, fall_pct):
         return False, f"fall_from_10yr_high={fall_pct:.1f}%<{min_fall:.0f}% ({cap_tier})"
     return True, None
 
+
+# Minimum return from a support level to its paired resistance level, by cap
+# tier — Support/Resistance strategy only. Unlike MIN_FALL_FROM_HIGH_PCT above,
+# this is always a hard gate (no REQUIRE_* toggle): a setup offering less than
+# this is not worth surfacing at all, so the scanner drops the row entirely
+# rather than attaching a fail badge. Keys must match the cap-tier strings
+# used in watchlist files.
+MIN_ZONE_GAIN_PCT: dict = {
+    "Large Cap": 20.0,
+    "Mid Cap":   30.0,
+    "Small Cap": 30.0,
+}
+
+
+def check_zone_gain(cap_tier, zone_gain_pct):
+    """
+    Check a support/resistance zone's fixed support->resistance % return
+    against its cap-tier minimum.
+
+    zone_gain_pct : (resistance_level - support_level) / support_level * 100.
+    Returns (pass: bool, fail_reason: str | None). Skipped (pass=True) when
+    zone_gain_pct is None or cap_tier isn't a recognised bucket — never block
+    on missing data.
+    """
+    min_gain = MIN_ZONE_GAIN_PCT.get(cap_tier)
+    if min_gain is None or zone_gain_pct is None:
+        return True, None
+    if zone_gain_pct < min_gain:
+        return False, f"zone_gain={zone_gain_pct:.1f}%<{min_gain:.0f}% ({cap_tier})"
+    return True, None
+
 # ============================================================
 # SECTION 2 — VALUATION (MUST HAVE)
 # ============================================================

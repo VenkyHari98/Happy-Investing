@@ -56,8 +56,9 @@ DATA_YEARS          = 10   # fetch window — needed for the fall-from-10yr-high
 ZONE_LOOKBACK_YEARS = 5    # zone detection itself only uses the trailing N years (per notes)
 SWING_WINDOW         = 10   # trading days on each side to confirm a swing point
 SWING_DEPTH_PCT      = 3.0  # minimum % move to count as a genuine bounce, not noise
-ZONE_TOLERANCE_PCT   = 2.0  # cluster swing points within this % of each other into one zone
-BUY_ZONE_PCT         = 2.0  # current price must be within this % of the support level
+TOUCH_BAND_PCT       = 1.5  # one unified band: clusters swing points into a zone, AND
+                             # defines "current price is touching" a level — same concept
+                             # as s200_20pct_rally_scanner.py's BUY_ZONE_PCT
 MIN_TOUCHES_VALID    = 2    # zone needs this many confirmed prior touches to be tradeable
 
 STATUS_PRIORITY = {
@@ -96,32 +97,48 @@ def find_swing_highs(prices: np.ndarray, window: int = SWING_WINDOW, depth_pct: 
     return result
 
 
-def cluster_into_zones(swing_prices: List[float], tolerance_pct: float = ZONE_TOLERANCE_PCT) -> List[Dict]:
-    """Group nearby swing prices into zones. Returns [{'level': float, 'touches': int}, ...]."""
+def cluster_into_zones(swing_prices: List[float], tolerance_pct: float = TOUCH_BAND_PCT) -> List[Dict]:
+    """Group nearby swing prices into zones. A price joins the current zone only if
+    it's within +/-tolerance_pct of the zone's running mean (recomputed as points are
+    added) — not just its last member — so the whole zone stays within one consistent
+    band instead of drifting past its own tolerance over a long chain of neighbors.
+    Returns [{'level', 'touches', 'zone_low', 'zone_high'}, ...].
+    """
     if not swing_prices:
         return []
     ordered = sorted(swing_prices)
     zones: List[List[float]] = [[ordered[0]]]
     for p in ordered[1:]:
-        if abs(p - zones[-1][-1]) / zones[-1][-1] * 100.0 <= tolerance_pct:
+        anchor = sum(zones[-1]) / len(zones[-1])
+        if abs(p - anchor) / anchor * 100.0 <= tolerance_pct:
             zones[-1].append(p)
         else:
             zones.append([p])
-    return [{"level": sum(z) / len(z), "touches": len(z)} for z in zones]
+    out = []
+    for z in zones:
+        level = sum(z) / len(z)
+        out.append({
+            "level":     level,
+            "touches":   len(z),
+            "zone_low":  round(level * (1 - tolerance_pct / 100.0), 2),
+            "zone_high": round(level * (1 + tolerance_pct / 100.0), 2),
+        })
+    return out
 
 
 def pair_support_with_resistance(support_zones: List[Dict], resistance_zones: List[Dict]) -> None:
     """Attach the nearest VALIDATED resistance zone ABOVE each support zone as its
-    target (mutates in place). Only zones with >= MIN_TOUCHES_VALID touches count as
-    candidates — a one-off swing high a hair above support is noise, not a real
-    ceiling the stock has actually bounced off repeatedly.
+    target_zone (mutates in place, stores the whole zone dict so its bounds are
+    available downstream, not just its level). Only zones with >= MIN_TOUCHES_VALID
+    touches count as candidates — a one-off swing high a hair above support is noise,
+    not a real ceiling the stock has actually bounced off repeatedly.
     """
     for s in support_zones:
         candidates = [
             r for r in resistance_zones
             if r["level"] > s["level"] and r["touches"] >= MIN_TOUCHES_VALID
         ]
-        s["target"] = min(candidates, key=lambda r: r["level"])["level"] if candidates else None
+        s["target_zone"] = min(candidates, key=lambda r: r["level"]) if candidates else None
 
 
 def detect_zones(df: pd.DataFrame, lookback_years: int = ZONE_LOOKBACK_YEARS) -> Tuple[List[Dict], List[Dict]]:
@@ -153,7 +170,7 @@ def compute_status(zone: Dict, current_price: float, ma200: Optional[float]) -> 
     below_dma = ma200 is not None and not np.isnan(ma200) and level < ma200
     if not below_dma:
         return "ABOVE_DMA", dist_pct
-    in_zone = abs(dist_pct) <= BUY_ZONE_PCT
+    in_zone = abs(dist_pct) <= TOUCH_BAND_PCT
     if in_zone and zone["touches"] >= MIN_TOUCHES_VALID:
         return "IN_ZONE", dist_pct
     return "WATCHING", dist_pct
@@ -175,9 +192,17 @@ def scan_stock(
         return None
 
     status, dist_pct = compute_status(zone, current_price, ma200_val)
+    target_zone = zone.get("target_zone")
     remaining_gain_pct = (
-        round((zone["target"] - current_price) / current_price * 100.0, 2)
-        if zone.get("target") else None
+        round((target_zone["level"] - current_price) / current_price * 100.0, 2)
+        if target_zone else None
+    )
+    # Fixed support->resistance return — a property of the zone itself, not of
+    # today's price. This (not remaining_gain_pct) is what the cap-tier minimum
+    # in fundamental_config.check_zone_gain() is measured against.
+    zone_gain_pct = (
+        round((target_zone["level"] - zone["level"]) / zone["level"] * 100.0, 2)
+        if target_zone else None
     )
 
     return {
@@ -188,12 +213,17 @@ def scan_stock(
         "current_price":        round(current_price, 2),
         "ma200":                round(ma200_val, 2) if not np.isnan(ma200_val) else None,
         "support_level":        round(zone["level"], 2),
-        "resistance_level":     round(zone["target"], 2) if zone.get("target") else None,
+        "support_zone_low":     zone["zone_low"],
+        "support_zone_high":    zone["zone_high"],
+        "resistance_level":     round(target_zone["level"], 2) if target_zone else None,
+        "resistance_zone_low":  target_zone["zone_low"]  if target_zone else None,
+        "resistance_zone_high": target_zone["zone_high"] if target_zone else None,
         "touch_count":          zone["touches"],
         "abcd_b_level":         round(zone["level"] * 0.90, 2),  # informational only — see plan
         "status":               status,
         "dist_to_support_pct":  dist_pct,
         "remaining_gain_pct":   remaining_gain_pct,
+        "zone_gain_pct":        zone_gain_pct,
         "below_200dma":         status != "ABOVE_DMA",
     }
 
@@ -238,6 +268,7 @@ def main():
     fund_map = fetch_all_fundamentals_parallel(stock_dfs.keys(), max_workers=4, errors=errors)
 
     results: List[Dict] = []
+    filtered_low_gain = 0
     with ThreadPoolExecutor(max_workers=16) as pool:
         futs = {
             pool.submit(scan_stock, ticker, cap_tier, sector, watchlist_source, stock_dfs.get(ticker)): ticker
@@ -307,6 +338,17 @@ def main():
                     and fall_pass
                 ),
             })
+
+            # Hard filter (Support/Resistance only, not the usual "show
+            # everything with a badge" convention): a setup with no confirmed
+            # resistance target, or one whose fixed support->resistance return
+            # doesn't clear its cap-tier minimum, isn't worth surfacing at all.
+            zone_gain_pct = row.get("zone_gain_pct")
+            gain_pass, _gain_fail_reason = cfg.check_zone_gain(cap_tier, zone_gain_pct)
+            if zone_gain_pct is None or not gain_pass:
+                filtered_low_gain += 1
+                continue
+
             results.append(row)
 
     results.sort(key=lambda x: (STATUS_PRIORITY.get(x["status"], 99), abs(x["dist_to_support_pct"])))
@@ -318,13 +360,14 @@ def main():
     source_counts = {"F40": len(f40_stocks), "E40": len(e40_stocks), "S200": len(s200_stocks)}
 
     out = {
-        "run_date":       today.isoformat(),
-        "stocks_scanned": len(stock_dfs),
-        "total_found":    len(results),
-        "status_counts":  status_counts,
-        "source_counts":  source_counts,
-        "opportunities":  results,
-        "errors":         errors[:50],
+        "run_date":               today.isoformat(),
+        "stocks_scanned":         len(stock_dfs),
+        "total_found":            len(results),
+        "filtered_low_gain_count": filtered_low_gain,
+        "status_counts":          status_counts,
+        "source_counts":          source_counts,
+        "opportunities":          results,
+        "errors":                 errors[:50],
     }
     out_path = output_dir / "support_resistance.json"
     with open(out_path, "w", encoding="utf-8") as f:
@@ -335,6 +378,7 @@ def main():
     print(f"  Opportunities found: {len(results)}")
     for s, c in sorted(status_counts.items(), key=lambda x: STATUS_PRIORITY.get(x[0], 99)):
         print(f"    {s:<12} {c}")
+    print(f"  Filtered out (below cap-tier min zone gain, or no resistance target): {filtered_low_gain}")
     print(f"  Errors: {len(errors)}")
     print(f"  Output: {out_path}")
 
