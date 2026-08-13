@@ -12,10 +12,11 @@ export const BACKTEST_FEATURES_ENABLED = false;
 // backend/api/routes/pipeline.py and web/start_dashboard.py — flip all three together.
 export const STOCK_ANALYSIS_ENABLED = false;
 
-// Static (Vercel + GitHub Actions) deploys have no live backend process to
-// call — opportunity data instead refreshes once daily via a scheduled
-// GitHub Action. Set NEXT_PUBLIC_STATIC_DEPLOY=true on that deployment to
-// hide the "Refresh Now" / "Refresh Fundamentals" controls that would
-// otherwise POST to endpoints that don't exist there. Local dev and any
-// deployment backed by the live FastAPI backend leave this unset (enabled).
+// Static (Vercel + GitHub Actions) deploys have no live backend process.
+// The opportunity-data "Refresh Now" button (StaleBanner) works everywhere —
+// it POSTs to /api/pipeline/refresh, which locally hits the live FastAPI
+// backend and on Vercel dispatches .github/workflows/refresh-opportunities.yml
+// instead. Fundamentals refresh (Screener.in scrape, 8-12 min) has no such
+// static equivalent — no GitHub Action wraps that mode — so its controls
+// stay hidden on static deploys. Set NEXT_PUBLIC_STATIC_DEPLOY=true there.
 export const LIVE_PIPELINE_CONTROLS_ENABLED = process.env.NEXT_PUBLIC_STATIC_DEPLOY !== "true";

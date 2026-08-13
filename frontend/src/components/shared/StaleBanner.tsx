@@ -2,7 +2,6 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { LIVE_PIPELINE_CONTROLS_ENABLED } from "@/lib/featureFlags";
 
 interface Props {
   runDate: string | undefined;
@@ -37,7 +36,12 @@ export function StaleBanner({ runDate, strategy }: Props) {
     setRefreshing(true);
     setRefreshError(null);
     try {
-      await api.pipeline.refresh({ force: true });
+      const result = await api.pipeline.refresh({ force: true });
+      if (result?.ok === false) {
+        setRefreshing(false);
+        setRefreshError(result.error ?? "Failed to start refresh");
+        return;
+      }
       // Poll pipeline status every 5s until done
       const poll = setInterval(async () => {
         const status = await api.pipeline.status();
@@ -75,15 +79,13 @@ export function StaleBanner({ runDate, strategy }: Props) {
             {effectiveRunDate ? ` (last scanned: ${effectiveRunDate})` : ""}.
             {" "}Opportunities may have changed.
           </span>
-          {LIVE_PIPELINE_CONTROLS_ENABLED && (
-            <button
-              onClick={handleRefresh}
-              disabled={refreshing}
-              className="ml-auto shrink-0 px-3 py-0.5 rounded text-[11px] font-medium border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 transition-colors disabled:opacity-50"
-            >
-              Refresh Now →
-            </button>
-          )}
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="ml-auto shrink-0 px-3 py-0.5 rounded text-[11px] font-medium border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 transition-colors disabled:opacity-50"
+          >
+            Refresh Now →
+          </button>
         </>
       )}
       {refreshError && (
