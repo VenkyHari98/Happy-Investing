@@ -25,6 +25,7 @@ from typing import Any, Dict, List
 import pandas as pd
 
 from f40_backtest_common import (
+    compute_fall_from_high,
     fetch_all_fundamentals_parallel,
     fetch_all_pe_parallel,
     fetch_all_stocks_parallel,
@@ -176,7 +177,7 @@ def build_report(
 def run_scanner(
     watchlist_files,
     output_root: Path,
-    years: int = 2,
+    years: int = 10,  # needs 10y of history for the fall-from-10yr-high Must-Have gate
     envelope_pct: float = DEFAULT_ENVELOPE_PCT,
     proximity_pct: float = DEFAULT_PROXIMITY_PCT,
     ma_period: int = 200,
@@ -200,7 +201,7 @@ def run_scanner(
 
     # Phase 2: balance sheet + business quality fundamentals (weekly cached)
     print(f"Fetching Phase 2 fundamental data for {len(stock_dfs)} stocks...")
-    fund_map = fetch_all_fundamentals_parallel(stock_dfs.keys(), max_workers=4)
+    fund_map = fetch_all_fundamentals_parallel(stock_dfs.keys(), max_workers=4, errors=errors)
 
     for ticker, df in stock_dfs.items():
         if df.empty:
@@ -237,6 +238,9 @@ def run_scanner(
                 if (w52h and w52h > 0 and close_px < w52h) else 0.0
             )
 
+            high_10yr, fall_from_10yr_high = compute_fall_from_high(df, years=10)
+            fall_pass, fall_fail_reason = cfg.check_fall_from_high(cap_tier, fall_from_10yr_high)
+
             pe_fails = []
             if pe_current is not None and pe_current > cfg.PE_MAX:
                 pe_fails.append(f"PE {pe_current:.1f} > max {cfg.PE_MAX:.0f}")
@@ -249,27 +253,38 @@ def run_scanner(
 
             row["fund_below_200dma"]          = below_200dma
             row["fund_fall_from_52w_high_pct"] = fall_from_52w_high
+            row["fund_fall_from_10yr_high_pct"] = fall_from_10yr_high
+            row["fund_fall_from_high_pass"]    = fall_pass
             row["fund_pe_pass"]                = pe_pass
             row["fund_pe_fail_reasons"]        = pe_fails
 
             # Phase 2: balance sheet + business quality (current snapshot)
             fund = fund_map.get(ticker)
             p2_pass, p2_fails = cfg.apply_fundamental_filter_phase2(fund)
+            if fall_fail_reason:
+                p2_fails = [*p2_fails, fall_fail_reason]
             row["fund_s3_s5_pass"]         = p2_pass
             row["fund_s3_s5_fail_reasons"] = p2_fails
+            row["fund_is_financial"]       = cfg.is_financial_sector(fund.get("sector", ""), fund.get("industry", "")) if fund else False
             row["fund_roce"]               = fund.get("roce_current")      if fund else None
             row["fund_roe"]                = fund.get("roe_current")       if fund else None
             row["fund_net_de"]             = fund.get("net_de_current")    if fund else None
             row["fund_ttm_np_cr"]          = fund.get("ttm_np_cr")         if fund else None
             row["fund_sales_vs_ath_pct"]   = fund.get("sales_vs_ath_pct") if fund else None
             row["fund_profit_vs_ath_pct"]  = fund.get("profit_vs_ath_pct") if fund else None
+            row["fund_tfa_vs_ath_pct"]     = fund.get("tfa_vs_ath_pct")    if fund else None
             row["fund_opm_3yr"]            = fund.get("opm_3yr")           if fund else None
+            row["fund_roce_source"]        = fund.get("roce_source")       if fund else None
+            row["fund_roe_source"]         = fund.get("roe_source")        if fund else None
+            row["fund_opm_source"]         = fund.get("opm_source")        if fund else None
             row["fund_pledged_pct"]        = fund.get("pledged_pct")       if fund else None
+            row["fund_public_shareholding_pct"] = fund.get("public_shareholding_pct") if fund else None
 
             row["fund_all_pass"] = (
-                below_200dma
+                (below_200dma or not cfg.REQUIRE_BELOW_200DMA)
                 and pe_pass
                 and p2_pass
+                and fall_pass
             )
 
             rows.append(row)
@@ -327,8 +342,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--years",
         type=int,
-        default=2,
-        help="Historical years of data to fetch (default 2)",
+        default=10,
+        help="Historical years of data to fetch (default 10 — needed for the fall-from-10yr-high gate)",
     )
     parser.add_argument(
         "--envelope-pct",

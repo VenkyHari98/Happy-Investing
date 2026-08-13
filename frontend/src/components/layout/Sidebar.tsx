@@ -1,9 +1,10 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { TrendingUp, BarChart2, Activity, Layers, LayoutDashboard, Triangle } from "lucide-react";
+import { TrendingUp, BarChart2, Activity, Layers, LayoutDashboard, Triangle, ArrowUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tip } from "@/components/ui/tooltip";
+import { FundamentalsRefreshControl } from "@/components/shared/FundamentalsRefreshControl";
 
 const NAV = [
   { href: "/",        label: "Overview",       icon: LayoutDashboard, tip: "Dashboard home — summary across all strategies" },
@@ -12,6 +13,7 @@ const NAV = [
   { href: "/s200",    label: "20% Rally",      icon: BarChart2,       tip: "Stocks with a 20%+ rally from a recent low — buy on the retest of the rally base, target the full rally" },
   { href: "/scanner", label: "Multi-Strategy", icon: Layers,          tip: "Combined live scanner showing 52W Low and S200 Rally opportunities side by side" },
   { href: "/rhs",     label: "RHS / CWH",     icon: Triangle,        tip: "Reverse Head & Shoulder and Cup With Handle pattern scanner + backtest for F40 + E40" },
+  { href: "/sr",      label: "Support/Resistance", icon: ArrowUpDown, tip: "Buy at a validated support zone (2+ prior touches, below 200 DMA), sell at the paired resistance zone — F40 + E40 + S200" },
 ];
 
 export function Sidebar() {
@@ -40,9 +42,7 @@ export function Sidebar() {
           </Tip>
         ))}
       </nav>
-      <div className="px-4 py-3 border-t border-border text-xs text-muted-foreground">
-        F40 · E40 · 20% Rally
-      </div>
+      <FundamentalsRefreshControl />
     </aside>
   );
 }

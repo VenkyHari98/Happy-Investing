@@ -31,10 +31,11 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import yfinance as yf
 from f40_backtest_common import (
+    compute_fall_from_high,
     fetch_all_fundamentals_parallel,
-    fetch_historical_data,
-    fetch_historical_pe_avgs,
-    fetch_stock_pe,
+    fetch_all_stocks_parallel,
+    fetch_historical_pe_avgs_cached,
+    fetch_stock_pe_cached,
     parse_f40_watchlist,
 )
 import fundamental_config as cfg
@@ -51,7 +52,7 @@ MIN_RALLY_PCT     = 20.0
 SINGLE_CANDLE_MIN = 19.0
 APPROACHING_PCT   = 5.0
 NEAR_PCT          = 15.0
-DATA_YEARS        = 3
+DATA_YEARS        = 10  # needs 10y of history for the fall-from-10yr-high Must-Have gate
 CHART_DAYS        = 730   # 2 years of price data for chart rendering
 
 STATUS_PRIORITY = {
@@ -144,13 +145,12 @@ def compute_status(
 
 def scan_stock(
     ticker: str, cap_tier: str, sector: str,
-    today: datetime.date, errors: list,
+    today: datetime.date, df: Optional[pd.DataFrame],
 ) -> Tuple[list, Optional[list], Optional[float], Optional[float], Optional[float], Optional[float], Optional[float]]:
     """
     Returns (rally_results, price_series, w52_high, w52_low, pe_current, pe_3yr_avg, pe_5yr_avg).
     price_series/w52/pe are None if no rallies found (saves memory).
     """
-    df = fetch_historical_data(ticker, years=DATA_YEARS, errors=errors)
     if df is None or len(df) < 210:
         return [], None, None, None, None, None, None
 
@@ -167,6 +167,9 @@ def scan_stock(
     current_price    = float(df["close"].iloc[-1])
     rallies          = find_20pct_rallies(df)
     results          = []
+
+    _, fall_from_10yr_high = compute_fall_from_high(df, years=10)
+    fall_pass, fall_fail_reason = cfg.check_fall_from_high(cap_tier, fall_from_10yr_high)
 
     for r in rallies:
         expiry_dt      = datetime.date.fromisoformat(r["expiry_date"])
@@ -220,6 +223,9 @@ def scan_stock(
             "dist_to_buy_zone_pct":      dist_to_buy,
             "remaining_gain_pct":        remaining_gain,
             "fund_fall_from_52w_high_pct": fall_from_52w_high,
+            "fund_fall_from_10yr_high_pct": fall_from_10yr_high,
+            "fund_fall_from_high_pass":  fall_pass,
+            "fund_fall_from_high_fail_reason": fall_fail_reason,
         })
 
     if not results:
@@ -245,8 +251,8 @@ def scan_stock(
             "w52_low":  round(float(w52l_val),  2) if not np.isnan(w52l_val) else None,
         })
 
-    pe_current = fetch_stock_pe(ticker)
-    pe_3yr_avg, pe_5yr_avg = fetch_historical_pe_avgs(ticker)
+    pe_current = fetch_stock_pe_cached(ticker)
+    pe_3yr_avg, pe_5yr_avg = fetch_historical_pe_avgs_cached(ticker)
 
     return results, prices, w52_high_current, w52_low_current, pe_current, pe_3yr_avg, pe_5yr_avg
 
@@ -285,9 +291,13 @@ def main():
     stocks_scanned      = 0
     stocks_with_rallies = 0
 
+    print(f"Fetching OHLCV for {total} stocks (cached)...")
+    stock_dfs = fetch_all_stocks_parallel(stocks, years=DATA_YEARS, errors=errors)
+    print(f"  {len(stock_dfs)}/{total} stocks with usable price history")
+
     with ThreadPoolExecutor(max_workers=16) as pool:
         futs = {
-            pool.submit(scan_stock, ticker, cap_tier, sector, today, errors):
+            pool.submit(scan_stock, ticker, cap_tier, sector, today, stock_dfs.get(ticker)):
             (ticker, cap_tier, sector, watchlist_source)
             for ticker, (cap_tier, sector, watchlist_source) in stocks.items()
         }
@@ -369,21 +379,64 @@ def main():
     # Phase 2: balance sheet + business quality for stocks with rallies
     if stock_data:
         print(f"Fetching Phase 2 fundamental data for {len(stock_data)} stocks with rallies...")
-        fund_map = fetch_all_fundamentals_parallel(list(stock_data.keys()), max_workers=4)
+        fund_map = fetch_all_fundamentals_parallel(list(stock_data.keys()), max_workers=4, errors=errors)
         for tkr, sd in stock_data.items():
             fund = fund_map.get(tkr)
             p2_pass, p2_fails = cfg.apply_fundamental_filter_phase2(fund)
             sd["fund_s3_s5_pass"]          = p2_pass
             sd["fund_s3_s5_fail_reasons"]  = p2_fails
+            sd["fund_is_financial"]        = cfg.is_financial_sector(fund.get("sector", ""), fund.get("industry", "")) if fund else False
             sd["fund_roce"]                = fund.get("roce_current")       if fund else None
             sd["fund_roe"]                 = fund.get("roe_current")        if fund else None
             sd["fund_net_de"]              = fund.get("net_de_current")     if fund else None
             sd["fund_ttm_np_cr"]           = fund.get("ttm_np_cr")          if fund else None
             sd["fund_sales_vs_ath_pct"]    = fund.get("sales_vs_ath_pct")  if fund else None
             sd["fund_profit_vs_ath_pct"]   = fund.get("profit_vs_ath_pct") if fund else None
+            sd["fund_tfa_vs_ath_pct"]      = fund.get("tfa_vs_ath_pct")     if fund else None
+            sd["fund_opm_3yr"]             = fund.get("opm_3yr")            if fund else None
+            sd["fund_roce_source"]         = fund.get("roce_source")        if fund else None
+            sd["fund_roe_source"]          = fund.get("roe_source")         if fund else None
+            sd["fund_opm_source"]          = fund.get("opm_source")         if fund else None
             sd["fund_pledged_pct"]         = fund.get("pledged_pct")        if fund else None
+            sd["fund_public_shareholding_pct"] = fund.get("public_shareholding_pct") if fund else None
     else:
         fund_map = {}
+
+    # Attach the full fundamental picture to every individual rally row too —
+    # not just the per-stock aggregate above — so the Scanner tab (which
+    # renders the flat rally list) can show the same fundamental verdict.
+    for r in all_rallies:
+        sd = stock_data.get(r["ticker"], {})
+        r["pe_current"]                = sd.get("pe_current")
+        r["pe_3yr_avg"]                = sd.get("pe_3yr_avg")
+        r["pe_5yr_avg"]                = sd.get("pe_5yr_avg")
+        r["fund_pe_pass"]              = sd.get("fund_pe_pass")
+        r["fund_pe_fail_reasons"]      = sd.get("fund_pe_fail_reasons", [])
+        r["fund_s3_s5_pass"]           = sd.get("fund_s3_s5_pass")
+        r["fund_s3_s5_fail_reasons"]   = sd.get("fund_s3_s5_fail_reasons", [])
+        r["fund_is_financial"]         = sd.get("fund_is_financial", False)
+        r["fund_roce"]                 = sd.get("fund_roce")
+        r["fund_roe"]                  = sd.get("fund_roe")
+        r["fund_net_de"]               = sd.get("fund_net_de")
+        r["fund_ttm_np_cr"]            = sd.get("fund_ttm_np_cr")
+        r["fund_sales_vs_ath_pct"]     = sd.get("fund_sales_vs_ath_pct")
+        r["fund_profit_vs_ath_pct"]    = sd.get("fund_profit_vs_ath_pct")
+        r["fund_tfa_vs_ath_pct"]       = sd.get("fund_tfa_vs_ath_pct")
+        r["fund_opm_3yr"]              = sd.get("fund_opm_3yr")
+        r["fund_roce_source"]          = sd.get("fund_roce_source")
+        r["fund_roe_source"]           = sd.get("fund_roe_source")
+        r["fund_opm_source"]           = sd.get("fund_opm_source")
+        r["fund_pledged_pct"]          = sd.get("fund_pledged_pct")
+        r["fund_public_shareholding_pct"] = sd.get("fund_public_shareholding_pct")
+        if r.get("fund_fall_from_high_fail_reason"):
+            r["fund_s3_s5_fail_reasons"] = [*r["fund_s3_s5_fail_reasons"], r["fund_fall_from_high_fail_reason"]]
+        # 200DMA validity is already covered by `status`/`below_200dma` above (S200's
+        # own "buy_price must be below 200 DMA" rule) — not re-derived here.
+        r["fund_all_pass"] = bool(
+            sd.get("fund_pe_pass", True)
+            and sd.get("fund_s3_s5_pass", True)
+            and r.get("fund_fall_from_high_pass", True)
+        )
 
     # Sort flat rally list by status priority then distance
     all_rallies.sort(key=lambda x: (
@@ -418,7 +471,15 @@ def main():
                 "fund_roe":               v.get("fund_roe"),
                 "fund_net_de":            v.get("fund_net_de"),
                 "fund_ttm_np_cr":         v.get("fund_ttm_np_cr"),
+                "fund_sales_vs_ath_pct":  v.get("fund_sales_vs_ath_pct"),
+                "fund_profit_vs_ath_pct": v.get("fund_profit_vs_ath_pct"),
+                "fund_tfa_vs_ath_pct":    v.get("fund_tfa_vs_ath_pct"),
+                "fund_opm_3yr":           v.get("fund_opm_3yr"),
+                "fund_roce_source":       v.get("fund_roce_source"),
+                "fund_roe_source":        v.get("fund_roe_source"),
+                "fund_opm_source":        v.get("fund_opm_source"),
                 "fund_pledged_pct":       v.get("fund_pledged_pct"),
+                "fund_public_shareholding_pct": v.get("fund_public_shareholding_pct"),
                 "best_status":            v["best_status"],
                 "rally_count":         v["rally_count"],
                 "best_gain_pct":       v["best_gain_pct"],

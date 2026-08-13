@@ -14,6 +14,10 @@ Override flags:
   --skip-portfolio     skip F40 and S200 portfolio backtests
   --data-only          run pipeline but do NOT start the web server
   --serve-only         skip all pipeline steps; just serve existing web/data/
+  --refresh-fundamentals  force-refresh Screener.in + yfinance fundamentals for the
+                          full universe, re-run scanners, then exit. Separate from
+                          the daily pipeline above — fundamentals only change
+                          quarterly, not daily, so this is never run automatically.
   --port N             local server port (default 8080)
 """
 
@@ -50,15 +54,37 @@ DOWNLOADS          = WORKSPACE / 'Source Data' / 'Downloaded Data'
 
 F40_SCANNER        = SCRIPTS_DIR / 'f40_opportunity_scanner.py'
 S200_RALLY         = SCRIPTS_DIR / 's200_20pct_rally_scanner.py'
+SR_SCANNER         = SCRIPTS_DIR / 'support_resistance_scanner.py'
 S200_RALLY_BACKTEST  = SCRIPTS_DIR / 's200_20pct_rally_backtest.py'
 BACKTEST_52W         = SCRIPTS_DIR / 'f40_backtest_52w.py'
 BACKTEST_ENVELOPE    = SCRIPTS_DIR / 'f40_backtest_envelope.py'
+BACKTEST_RHS_CWH     = SCRIPTS_DIR / 'f40_backtest_rhs_cwh.py'
 F40_PORTFOLIO_BT     = SCRIPTS_DIR / 'f40_portfolio_backtest.py'
 S200_PORTFOLIO_BT    = SCRIPTS_DIR / 's200_portfolio_backtest.py'
+SCREENER_CACHE       = SCRIPTS_DIR / 'screener_cache.py'
 BUILD_DATA           = ROOT / 'build_data.py'
+
+WATCHLIST_ALL = ','.join(
+    str(WORKSPACE / 'Source Data' / 'Watchlist' / f'{name}.txt') for name in ('F40', 'E40', 'S200')
+)
 
 DATA_DIR      = ROOT / 'data'
 SUMMARY_FILE  = DATA_DIR / 'current_setup_summary.json'
+
+# Temporary pause switch — mirrors PAUSE_PORTFOLIO_BACKTESTS in
+# backend/api/routes/pipeline.py and BACKTEST_FEATURES_ENABLED in
+# frontend/src/lib/featureFlags.ts. Flip all three together to re-enable.
+PAUSE_PORTFOLIO_BACKTESTS = True
+
+# Temporary pause switch — mirrors PAUSE_STOCK_ANALYSIS_BACKTESTS in
+# backend/api/routes/pipeline.py and STOCK_ANALYSIS_ENABLED in
+# frontend/src/lib/featureFlags.ts. Flip all three together to re-enable.
+# Skips the 52W/Envelope/S200-rally backtest engines and RHS's full backtest run
+# (the per-stock trade+chart data the "Stock Analysis" tab shows) — the 4
+# opportunity scanners are separate scripts and keep running at full freshness
+# regardless (RHS's scanner runs standalone via --scanner-only when this is on,
+# see _build_pipeline_steps).
+PAUSE_STOCK_ANALYSIS_BACKTESTS = True
 
 
 # ── Freshness helpers ──────────────────────────────────────────────────────────
@@ -162,7 +188,18 @@ def _build_pipeline_steps(args) -> list:
         all_steps += [
             ('F40 Opportunity Scanner', [sys.executable, str(F40_SCANNER)]),
             ('S200 20% Rally Scanner', [sys.executable, str(S200_RALLY)]),
+            ('Support & Resistance Scanner', [sys.executable, str(SR_SCANNER)]),
         ]
+        if args.skip_backtests:
+            # RHS's scanner is normally a byproduct of its full backtest run
+            # (below); when backtests are paused, run it standalone via
+            # --scanner-only so RHS's Opportunity Scanner tab still gets fresh
+            # data like the other 3 scanners.
+            all_steps.append(
+                ('RHS/CWH Scanner (scanner-only)', [sys.executable, str(BACKTEST_RHS_CWH),
+                                                     '--output', str(DOWNLOADS / 'rhs_cwh_backtest'),
+                                                     '--scanner-only']),
+            )
     else:
         print('\n[Skipped] Live scanners (--skip-scanners)')
 
@@ -176,6 +213,12 @@ def _build_pipeline_steps(args) -> list:
                 (f'Envelope Backtest {hz}Y',       [sys.executable, str(BACKTEST_ENVELOPE), '--years', hz,
                                                     '--output', str(DOWNLOADS / f'backtest_envelope_long_{hz}y')]),
             ]
+        # Single horizon (no 5Y/10Y split) — the script runs backtest + scanner together
+        # and the backend route reads one fixed folder, unlike the other 3 strategies above.
+        all_steps.append(
+            ('RHS/CWH Backtest + Scanner', [sys.executable, str(BACKTEST_RHS_CWH),
+                                             '--output', str(DOWNLOADS / 'rhs_cwh_backtest')]),
+        )
     else:
         print('\n[Skipped] Per-stock backtests (--skip-backtests)')
 
@@ -194,6 +237,104 @@ def _build_pipeline_steps(args) -> list:
         print('\n[Skipped] Portfolio backtests (--skip-portfolio)')
 
     return all_steps
+
+
+FUNDAMENTALS_META_FILE = DOWNLOADS / 'fundamentals_meta.json'
+
+
+FUNDAMENTALS_INCREMENTAL_MAX_AGE_DAYS = 90  # ~1 quarter — matches screener_cache.CACHE_AGE_DAYS
+
+
+def run_fundamentals_refresh(force_all: bool = False) -> None:
+    """
+    Refresh fundamentals (Screener.in + yfinance Phase-2 metrics) for the full
+    F40+E40+S200 universe, then re-run the 4 live scanners so their output
+    JSON reflects the fresh data immediately.
+
+    Deliberately NOT part of the daily OHLCV/scanner pipeline — fundamentals
+    (ROCE, ROE, Net D/E, TTM Net Profit, OPM, etc.) only change on quarterly
+    results, not daily. This is only invoked explicitly: via
+    `--refresh-fundamentals` on the CLI, or the "Refresh Fundamentals" button
+    in the dashboard (POST /api/pipeline/refresh-fundamentals).
+
+    force_all=False (default, "incremental"): only re-fetches tickers whose
+    cached data is actually old enough (~90 days) to plausibly have a new
+    quarterly result — typically fast, since most of the universe won't be
+    due yet on any given day. force_all=True re-fetches everyone regardless
+    of freshness — realistically 8-12 minutes for the full universe, since
+    Screener.in has no bulk API and stays deliberately sequential.
+    """
+    from f40_backtest_common import parse_watchlists, fetch_all_fundamentals_parallel
+    from screener_cache import write_progress
+
+    print('\n' + '=' * 60)
+    print(f"  Fundamentals Refresh ({'FULL' if force_all else 'incremental'})")
+    print('=' * 60)
+
+    # Screener.in — force_all bypasses its own 90-day freshness check.
+    # Non-fatal if credentials aren't configured.
+    write_progress('screener', 0, 0, 'starting…')
+    screener_cmd = [sys.executable, str(SCREENER_CACHE), '--watchlist', WATCHLIST_ALL]
+    if force_all:
+        screener_cmd.append('--force')
+    run('Screener.in Fundamentals Pull', screener_cmd)
+
+    # yfinance Phase-2 fundamentals. max_workers bumped to 10 for this
+    # explicit refresh flow only (yfinance tolerates more concurrent load
+    # than Screener.in) — scanners' own calls elsewhere keep max_workers=4.
+    watchlist_paths = [Path(p.strip()) for p in WATCHLIST_ALL.split(',')]
+    stocks = list(parse_watchlists(watchlist_paths).keys())
+    print(f"\n{'Force-refreshing' if force_all else 'Refreshing stale'} yfinance "
+          f"fundamentals for up to {len(stocks)} tickers...")
+    write_progress('yfinance', 0, len(stocks), '')
+    fetch_all_fundamentals_parallel(
+        stocks,
+        max_workers=10,
+        force=force_all,
+        max_age_days=None if force_all else FUNDAMENTALS_INCREMENTAL_MAX_AGE_DAYS,
+        progress_callback=lambda done, total: write_progress('yfinance', done, total, ''),
+    )
+
+    # Re-run the 4 live scanners so their output JSON picks up the fresh data
+    # right away, instead of waiting for the next unrelated daily scan.
+    # OHLCV itself is already same-day cached, so this is cheap beyond the
+    # fundamentals fetch just performed.
+    scanner_steps = [
+        ('F40 Opportunity Scanner', [sys.executable, str(F40_SCANNER)]),
+        ('S200 20% Rally Scanner', [sys.executable, str(S200_RALLY)]),
+        ('Support & Resistance Scanner', [sys.executable, str(SR_SCANNER)]),
+    ]
+    write_progress('scanners', 0, len(scanner_steps) + 1, scanner_steps[0][0])
+    run_parallel(scanner_steps)
+    # --scanner-only while Stock Analysis backtests are paused — this refresh's
+    # job is fresh scanner output, not a full historical backtest re-run.
+    rhs_cmd = [sys.executable, str(BACKTEST_RHS_CWH), '--output', str(DOWNLOADS / 'rhs_cwh_backtest')]
+    rhs_label = 'RHS/CWH Backtest + Scanner'
+    if PAUSE_STOCK_ANALYSIS_BACKTESTS:
+        rhs_cmd.append('--scanner-only')
+        rhs_label = 'RHS/CWH Scanner (scanner-only)'
+    write_progress('scanners', len(scanner_steps), len(scanner_steps) + 1, rhs_label)
+    run(rhs_label, rhs_cmd)
+
+    # Reconciliation audit — cache-only comparison of Screener.in (primary) vs
+    # yfinance (fallback) for ROCE/ROE/OPM/Sales/Net Profit, flagging stocks
+    # running on the fallback and any outsized cross-source gap that looks more
+    # like a scraper bug than normal formula variance. Read-only, never blocks
+    # the refresh.
+    try:
+        from fundamentals_audit import write_discrepancy_report
+        write_discrepancy_report(stocks, DOWNLOADS / 'fundamentals_discrepancies.json')
+    except Exception as exc:
+        print(f"  [Fundamentals audit skipped: {exc}]")
+
+    DOWNLOADS.mkdir(parents=True, exist_ok=True)
+    with open(FUNDAMENTALS_META_FILE, 'w', encoding='utf-8') as f:
+        json.dump({'last_refreshed': datetime.date.today().isoformat()}, f)
+    write_progress('done', 1, 1, '')
+
+    print('\n' + '=' * 60)
+    print('  Fundamentals refresh complete.')
+    print('=' * 60)
 
 
 def run_pipeline_background(args, state: PipelineState) -> None:
@@ -226,10 +367,25 @@ def parse_args():
     )
     p.add_argument('--force',          action='store_true', help='Force full pipeline re-run regardless of data freshness')
     p.add_argument('--skip-scanners',  action='store_true', help='Skip F40 and S200 live scanners')
-    p.add_argument('--skip-backtests', action='store_true', help='Skip 52W and Envelope backtests')
-    p.add_argument('--skip-portfolio', action='store_true', help='Skip F40 and S200 portfolio backtests')
+    p.add_argument('--skip-backtests', action='store_true', default=PAUSE_STOCK_ANALYSIS_BACKTESTS,
+                   help='Skip 52W/Envelope/S200-rally backtests and RHS\'s full backtest '
+                        'run — the per-stock data behind the "Stock Analysis" tabs '
+                        '(defaults on — see PAUSE_STOCK_ANALYSIS_BACKTESTS). Opportunity '
+                        'scanners (incl. RHS, via --scanner-only) are unaffected.')
+    p.add_argument('--skip-portfolio', action='store_true', default=PAUSE_PORTFOLIO_BACKTESTS,
+                   help='Skip F40 and S200 portfolio backtests (defaults on — see PAUSE_PORTFOLIO_BACKTESTS)')
     p.add_argument('--data-only',      action='store_true', help='Build data but do not start the web server')
     p.add_argument('--serve-only',     action='store_true', help='Skip all data pipeline steps; just serve existing web/data/')
+    p.add_argument('--refresh-fundamentals', action='store_true',
+                   help='Refresh fundamentals (Screener.in + yfinance) for the full '
+                        'universe and re-run scanners, then exit. Incremental by '
+                        'default (only stocks stale ~90+ days) — see '
+                        '--force-all-fundamentals. Separate from the daily pipeline — '
+                        'fundamentals only change quarterly.')
+    p.add_argument('--force-all-fundamentals', action='store_true',
+                   help='With --refresh-fundamentals: re-fetch every ticker regardless '
+                        'of freshness (realistically 8-12 min for the full universe, '
+                        'since Screener.in stays sequential). Rarely needed.')
     p.add_argument('--port',           type=int, default=8080, help='Local server port (default: 8080)')
     return p.parse_args()
 
@@ -520,6 +676,10 @@ def main():
     print('\n' + '=' * 60)
     print('  Happy Investing -- Dashboard')
     print('=' * 60)
+
+    if args.refresh_fundamentals:
+        run_fundamentals_refresh(force_all=args.force_all_fundamentals)
+        return
 
     if args.serve_only:
         print('  (--serve-only: using existing web/data/)')

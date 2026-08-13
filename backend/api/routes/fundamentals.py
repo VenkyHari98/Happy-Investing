@@ -93,12 +93,8 @@ def get_metrics(ticker: str):
     """
     try:
         from data_cache import get_fundamental_metrics  # type: ignore[import]
-    except ImportError:
-        # Fall back to direct fetch if cache wrapper not available
-        try:
-            from fundamental_filter import get_stock_fundamentals as get_fundamental_metrics  # type: ignore[import]
-        except ImportError as exc:
-            raise HTTPException(500, f"Cannot import fundamentals: {exc}")
+    except ImportError as exc:
+        raise HTTPException(500, f"Cannot import data_cache: {exc}")
 
     try:
         raw = get_fundamental_metrics(ticker)
@@ -122,7 +118,8 @@ def get_metrics(ticker: str):
             "is_financial_sector": False, "pledged_pct": None,
         }
 
-    # Normalise field names — raw may be a dict or object with various key conventions
+    # raw is the dict returned by fetch_fundamental_metrics() — see
+    # Scripts/strategies/f40_backtest_common.py for the authoritative key names.
     def _get(*keys):
         for k in keys:
             v = raw.get(k) if isinstance(raw, dict) else getattr(raw, k, None)
@@ -130,16 +127,27 @@ def get_metrics(ticker: str):
                 return _safe(v)
         return None
 
+    opm_3yr = raw.get("opm_3yr") if isinstance(raw, dict) else getattr(raw, "opm_3yr", None)
+    opm_latest = _safe(opm_3yr[0]) if opm_3yr else None
+
+    try:
+        import fundamental_config as cfg  # type: ignore[import]
+        sector_str = f"{raw.get('sector', '')} {raw.get('industry', '')}".lower()
+        is_financial_sector = any(s.lower() in sector_str for s in cfg.FINANCIAL_SECTORS)
+    except ImportError:
+        is_financial_sector = False
+
     return {
         "ticker": ticker,
-        "roce":            _get("roce", "ROCE", "roce_3yr"),
-        "roe":             _get("roe", "ROE"),
-        "de_ratio":        _get("de_ratio", "net_de", "DE"),
-        "opm":             _get("opm", "OPM", "opm_3yr"),
-        "revenue_growth":  _get("revenue_growth", "rev_growth", "revenue_cagr"),
-        "profit_growth":   _get("profit_growth", "pat_growth", "profit_cagr"),
-        "is_financial_sector": bool(raw.get("is_financial_sector", False)) if isinstance(raw, dict) else False,
-        "pledged_pct":     _get("pledged_pct", "pledged"),
+        "roce":            _get("roce_current"),
+        "roe":              _get("roe_current"),
+        "de_ratio":        _get("net_de_current"),
+        "opm":             opm_latest,
+        # Not computed anywhere yet — revenue/profit CAGR is a Phase 2 metric.
+        "revenue_growth":  None,
+        "profit_growth":   None,
+        "is_financial_sector": is_financial_sector,
+        "pledged_pct":     _get("pledged_pct"),
     }
 
 

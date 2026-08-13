@@ -20,6 +20,7 @@ import type {
   RHSBacktestSummary,
   RHSBacktestStockData,
   RHSStockDetail,
+  SRScannerData,
 } from "./types";
 
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -83,6 +84,13 @@ export const api = {
         r.json()
       );
     },
+    refreshFundamentals: (opts?: { forceAll?: boolean }) => {
+      const params = new URLSearchParams();
+      if (opts?.forceAll) params.set("force_all", "true");
+      return fetch(`${BASE}/api/pipeline/refresh-fundamentals?${params}`, { method: "POST" }).then((r) =>
+        r.json()
+      );
+    },
   },
 
   fundamentals: {
@@ -99,6 +107,10 @@ export const api = {
     summary: () => get<RHSBacktestSummary>("/api/rhs/summary"),
     stocks: () => get<RHSBacktestStockData>("/api/rhs/stocks"),
     stockDetail: (ticker: string) => get<RHSStockDetail>(`/api/rhs/stock/${encodeURIComponent(ticker)}`),
+  },
+
+  sr: {
+    scanner: () => get<SRScannerData>("/api/sr/scanner"),
   },
 
   gridSearch: {

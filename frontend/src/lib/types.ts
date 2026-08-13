@@ -1,6 +1,38 @@
+// ── Fundamental filter results ───────────────────────────────────────────────
+// Shared field set attached to every scanner opportunity row (F40 52W/Envelope,
+// S200 rally, RHS/CWH) by fundamental_config.py's Must-Have gates.
+
+export interface FundamentalFields {
+  fund_below_200dma?: boolean;
+  fund_pe_pass?: boolean;
+  fund_s3_s5_pass?: boolean;
+  fund_all_pass?: boolean;
+  // True when ROE (not ROCE) is the gate that actually applies to this stock
+  // (banks/NBFCs/insurance) — see fundamental_config.py's is_financial_sector().
+  fund_is_financial?: boolean;
+  fund_roce?: number | null;
+  fund_roe?: number | null;
+  fund_net_de?: number | null;
+  fund_opm_3yr?: number[] | null;
+  fund_roce_source?: "screener" | "yfinance" | null;
+  fund_roe_source?: "screener" | "yfinance" | null;
+  fund_opm_source?: "screener" | "yfinance" | null;
+  fund_pledged_pct?: number | null;
+  fund_public_shareholding_pct?: number | null;
+  fund_fall_from_52w_high_pct?: number | null;
+  fund_fall_from_10yr_high_pct?: number | null;
+  fund_fall_from_high_pass?: boolean;
+  fund_ttm_np_cr?: number | null;
+  fund_sales_vs_ath_pct?: number | null;
+  fund_profit_vs_ath_pct?: number | null;
+  fund_tfa_vs_ath_pct?: number | null;
+  fund_pe_fail_reasons?: string[];
+  fund_s3_s5_fail_reasons?: string[];
+}
+
 // ── Scanner (current_setup.json) ─────────────────────────────────────────────
 
-export interface ScannerRow {
+export interface ScannerRow extends FundamentalFields {
   ticker: string;
   cap_tier: string;
   sector: string;
@@ -18,16 +50,8 @@ export interface ScannerRow {
   upper_envelope?: number | null;
   distance_to_lower_envelope_pct?: number | null;
   distance_to_upper_envelope_pct?: number | null;
-  // Fundamental filter results
-  fund_below_200dma?: boolean;
-  fund_pe_pass?: boolean;
-  fund_s3_s5_pass?: boolean;
-  fund_all_pass?: boolean;
-  fund_roce?: number | null;
-  fund_roe?: number | null;
-  fund_net_de?: number | null;
-  fund_opm_3yr?: number | null;
-  fund_pledged_pct?: number | null;
+  // Scanner-computed status (from backend status_52w field)
+  status_52w?: string;
 }
 
 export interface ScannerSummary {
@@ -161,7 +185,7 @@ export interface EnvelopeSummary extends BacktestSummary {
 
 export type S200Status = "IN_ZONE" | "APPROACHING" | "WATCHING_NEAR" | "WATCHING" | "BELOW_BUY" | "ABOVE_DMA";
 
-export interface S200Rally {
+export interface S200Rally extends FundamentalFields {
   ticker: string;
   cap_tier: string;
   sector: string;
@@ -183,6 +207,9 @@ export interface S200Rally {
   dist_to_buy_zone_pct: number;
   remaining_gain_pct: number;
   below_200dma: boolean;
+  pe_current?: number | null;
+  pe_3yr_avg?: number | null;
+  pe_5yr_avg?: number | null;
 }
 
 export interface S200ScannerData {
@@ -380,6 +407,15 @@ export interface OhlcvPoint {
 
 // ── Pipeline ─────────────────────────────────────────────────────────────────
 
+export type FundamentalsPhase = "screener" | "yfinance" | "scanners" | "done";
+
+export interface FundamentalsProgress {
+  phase: FundamentalsPhase;
+  current: number;
+  total: number;
+  label: string;
+}
+
 export interface PipelineStatus {
   running: boolean;
   started_at: string;
@@ -388,6 +424,8 @@ export interface PipelineStatus {
   error: string;
   is_fresh_today: boolean;
   today: string;
+  fundamentals_run_date: string;
+  fundamentals_progress: FundamentalsProgress | null;
 }
 
 // ── Envelope per-stock data (skipped entries) ────────────────────────────────
@@ -506,7 +544,7 @@ export interface CWHPattern {
   target_price: number;
 }
 
-export interface RHSOpportunity {
+export interface RHSOpportunity extends FundamentalFields {
   ticker: string;
   cap_tier: string;
   sector: string;
@@ -519,6 +557,8 @@ export interface RHSOpportunity {
   last_date: string;
   breakout_date: string | null;
   pattern_start_date: string;
+  pe_current?: number | null;
+  pe_5yr_avg?: number | null;
   // RHS-specific
   head_price?: number;
   r_shoulder_date?: string;
@@ -527,6 +567,10 @@ export interface RHSOpportunity {
   cup_bottom_price?: number;
   handle_low_date?: string;
   handle_low_price?: number;
+  // Set when this opportunity is a persisted open position carried forward from
+  // an earlier scan (see rhs_open_positions.json), not a same-day fresh signal.
+  tracked_open?: boolean;
+  first_seen?: string;
 }
 
 export interface RHSScannerData {
@@ -538,6 +582,7 @@ export interface RHSScannerData {
   breakout_count: number;
   forming_count: number;
   opportunities: RHSOpportunity[];
+  errors?: string[];
 }
 
 export interface RHSPriceMarker {
@@ -631,4 +676,39 @@ export interface RHSBacktestSummary {
   pattern_params: Record<string, number | boolean>;
   metrics: RHSBacktestMetrics;
   fundamental_gates: Record<string, number | boolean>;
+}
+
+// ── Support & Resistance ──────────────────────────────────────────────────────
+// v1: scanner only. Buy at a validated support zone (>=2 prior touches, below
+// 200 DMA), sell at the paired resistance zone above it.
+
+export type SRStatus = "IN_ZONE" | "WATCHING" | "ABOVE_DMA";
+
+export interface SROpportunity extends FundamentalFields {
+  ticker: string;
+  cap_tier: string;
+  sector: string;
+  watchlist_source: string;
+  current_price: number;
+  ma200: number | null;
+  support_level: number;
+  resistance_level: number | null;
+  touch_count: number;
+  abcd_b_level: number;
+  status: SRStatus;
+  dist_to_support_pct: number;
+  remaining_gain_pct: number | null;
+  below_200dma: boolean;
+  pe_current: number | null;
+  pe_5yr_avg: number | null;
+}
+
+export interface SRScannerData {
+  run_date: string;
+  stocks_scanned: number;
+  total_found: number;
+  status_counts: Record<string, number>;
+  source_counts?: Record<string, number>;
+  opportunities: SROpportunity[];
+  errors?: string[];
 }

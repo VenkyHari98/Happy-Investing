@@ -2,21 +2,24 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { MetricCards, type MetricDef } from "@/components/52w/MetricCards";
 import { RHSScanner } from "@/components/rhs/RHSScanner";
 import { RHSBacktestTable } from "@/components/rhs/RHSBacktestTable";
 import { RHSStockList } from "@/components/rhs/RHSStockList";
 import { RHSStockDetail } from "@/components/rhs/RHSStockDetail";
 import { api } from "@/lib/api";
-import { fmtPct, fmtNum } from "@/lib/format";
+import { StaleBanner } from "@/components/shared/StaleBanner";
+import { BACKTEST_FEATURES_ENABLED, STOCK_ANALYSIS_ENABLED } from "@/lib/featureFlags";
 
 export default function RHSPage() {
   const [activeTab, setActiveTab]       = useState("scanner");
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
 
   const { data: scanner }  = useQuery({ queryKey: ["rhs-scanner"],  queryFn: api.rhs.scanner });
-  const { data: summary, isLoading: sumLoading } = useQuery({ queryKey: ["rhs-summary"],  queryFn: api.rhs.summary });
-  const { data: stocks,  isLoading: stocksLoading } = useQuery({ queryKey: ["rhs-stocks"],   queryFn: api.rhs.stocks });
+  const { data: stocks,  isLoading: stocksLoading } = useQuery({
+    queryKey: ["rhs-stocks"],
+    queryFn: api.rhs.stocks,
+    enabled: BACKTEST_FEATURES_ENABLED || STOCK_ANALYSIS_ENABLED,
+  });
 
   const firstTicker     = !selectedTicker && stocks?.overview?.length ? stocks.overview[0].ticker : null;
   const displayTicker   = selectedTicker ?? firstTicker;
@@ -25,21 +28,8 @@ export default function RHSPage() {
 
   const handleSelect = (ticker: string) => {
     setSelectedTicker(ticker);
-    setActiveTab("analysis");
+    if (STOCK_ANALYSIS_ENABLED) setActiveTab("analysis");
   };
-
-  const metrics: MetricDef[] = summary
-    ? [
-        { label: "Stocks Tested",    value: summary.stocks_tested,   variant: "accent", tooltip: "F40 + E40 stocks scanned" },
-        { label: "Completed Trades", value: summary.total_trades,                        tooltip: "Simulated trades that hit target" },
-        { label: "Win Rate",         value: fmtNum(summary.metrics.win_rate) + "%", variant: "green", tooltip: "% of trades that reached the target" },
-        { label: "Avg P/L",          value: fmtPct(summary.metrics.avg_trade_pnl_pct), variant: summary.metrics.avg_trade_pnl_pct >= 0 ? "green" : "red", tooltip: "Average % return per completed trade" },
-        { label: "Best Trade",       value: fmtPct(summary.metrics.max_gain_pct), variant: "green", tooltip: "Best single trade return" },
-        { label: "CAGR",             value: fmtPct(summary.metrics.cagr),         variant: summary.metrics.cagr >= 0 ? "green" : "red", tooltip: "Compound annual growth rate" },
-        { label: "Avg Duration",     value: `${Math.round(summary.metrics.avg_trade_duration_days)}d`, tooltip: "Average trade holding period" },
-        { label: "Open Positions",   value: summary.open_positions, variant: "amber", tooltip: "Still holding (target not yet reached)" },
-      ]
-    : [];
 
   return (
     <div className="flex flex-col">
@@ -54,29 +44,14 @@ export default function RHSPage() {
         </div>
       </div>
 
-      {/* Metrics */}
-      {activeTab !== "analysis" && (
-        <div className="px-6 py-3 border-b border-border shrink-0">
-          {sumLoading ? (
-            <p className="text-xs text-muted-foreground">Loading metrics…</p>
-          ) : summary ? (
-            <MetricCards metrics={metrics} />
-          ) : (
-            <p className="text-xs text-muted-foreground">
-              No backtest data yet — run{" "}
-              <code className="bg-muted px-1 rounded text-[10px]">python Scripts/strategies/f40_backtest_rhs_cwh.py</code>{" "}
-              to generate.
-            </p>
-          )}
-        </div>
-      )}
+      <StaleBanner runDate={scanner?.run_date} strategy="RHS/CWH" />
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col">
         <TabsList className="mx-6 mt-3 w-fit shrink-0">
           <TabsTrigger value="scanner">Current Opportunities</TabsTrigger>
-          <TabsTrigger value="backtest">Backtest by Stock</TabsTrigger>
-          <TabsTrigger value="analysis">Stock Analysis</TabsTrigger>
+          {BACKTEST_FEATURES_ENABLED && <TabsTrigger value="backtest">Backtest by Stock</TabsTrigger>}
+          {STOCK_ANALYSIS_ENABLED && <TabsTrigger value="analysis">Stock Analysis</TabsTrigger>}
         </TabsList>
 
         {/* Scanner */}
@@ -89,42 +64,46 @@ export default function RHSPage() {
         </TabsContent>
 
         {/* Backtest table */}
-        <TabsContent value="backtest" className="px-6 py-4">
-          {stocksLoading ? (
-            <p className="text-sm text-muted-foreground">Loading…</p>
-          ) : stocks?.overview ? (
-            <RHSBacktestTable overview={stocks.overview} onSelect={handleSelect} />
-          ) : (
-            <p className="text-sm text-muted-foreground">No backtest data. Run the engine first.</p>
-          )}
-        </TabsContent>
+        {BACKTEST_FEATURES_ENABLED && (
+          <TabsContent value="backtest" className="px-6 py-4">
+            {stocksLoading ? (
+              <p className="text-sm text-muted-foreground">Loading…</p>
+            ) : stocks?.overview ? (
+              <RHSBacktestTable overview={stocks.overview} onSelect={handleSelect} />
+            ) : (
+              <p className="text-sm text-muted-foreground">No backtest data. Run the engine first.</p>
+            )}
+          </TabsContent>
+        )}
 
         {/* Stock analysis */}
-        <TabsContent value="analysis" className="overflow-hidden">
-          {stocksLoading ? (
-            <div className="flex items-center justify-center h-40 text-sm text-muted-foreground">Loading…</div>
-          ) : (
-            <div className="flex h-[calc(100dvh-120px)] overflow-hidden">
-              <div className="w-56 shrink-0 border-r border-border overflow-hidden">
-                <RHSStockList
-                  overview={stocks?.overview ?? []}
-                  scannerData={scanner ?? null}
-                  selectedTicker={displayTicker}
-                  onSelect={setSelectedTicker}
-                />
+        {STOCK_ANALYSIS_ENABLED && (
+          <TabsContent value="analysis" className="overflow-hidden">
+            {stocksLoading ? (
+              <div className="flex items-center justify-center h-40 text-sm text-muted-foreground">Loading…</div>
+            ) : (
+              <div className="flex h-[calc(100dvh-120px)] overflow-hidden">
+                <div className="w-56 shrink-0 border-r border-border overflow-hidden">
+                  <RHSStockList
+                    overview={stocks?.overview ?? []}
+                    scannerData={scanner ?? null}
+                    selectedTicker={displayTicker}
+                    onSelect={setSelectedTicker}
+                  />
+                </div>
+                <div className="flex-1 overflow-y-auto px-5 py-4">
+                  {displayData ? (
+                    <RHSStockDetail data={displayData} currentOpportunities={displayOpps} />
+                  ) : (
+                    <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
+                      Select a stock to view detail
+                    </div>
+                  )}
+                </div>
               </div>
-              <div className="flex-1 overflow-y-auto px-5 py-4">
-                {displayData ? (
-                  <RHSStockDetail data={displayData} currentOpportunities={displayOpps} />
-                ) : (
-                  <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
-                    Select a stock to view detail
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </TabsContent>
+            )}
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   );

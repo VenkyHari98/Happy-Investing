@@ -1,7 +1,14 @@
 """File-based cache for yfinance downloads.
 
-OHLCV cache key : {TICKER}_{years}y_{YYYYMMDD}.pkl   — daily expiry
-PE series key   : {TICKER}_pe_{YYYY}W{WW}.pkl         — weekly expiry
+OHLCV cache key   : {TICKER}_{years}y_{YYYYMMDD}.pkl   — daily expiry
+PE series key     : {TICKER}_pe_{YYYY}W{WW}.pkl         — weekly expiry
+Current PE key    : {TICKER}_pecur_{YYYY}W{WW}.pkl      — weekly expiry
+PE 3/5yr avg key  : {TICKER}_peavgs_{YYYY}W{WW}.pkl      — weekly expiry
+Fundamentals key  : {TICKER}_fund.pkl                    — no auto-expiry;
+                     only refreshed via get_fundamental_metrics(force=True),
+                     triggered by the dedicated "Refresh Fundamentals" pipeline
+                     mode (see web/start_dashboard.py --refresh-fundamentals),
+                     never by the daily OHLCV/scanner pipeline.
 
 Each ticker writes to its own file so there are no shared-file races.
 list.append is GIL-protected in CPython, so errors can be shared safely
@@ -18,6 +25,7 @@ Cleanup (run manually when disk space matters):
 """
 
 import pickle
+import time
 from datetime import date
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -110,21 +118,79 @@ def get_pe_series(
 
 def get_fundamental_metrics(
     ticker: str,
+    force: bool = False,
+    max_age_days: Optional[int] = None,
 ) -> Optional[Dict]:
     """
-    Weekly-cached wrapper around fetch_fundamental_metrics.
+    Stable-cached wrapper around fetch_fundamental_metrics.
 
     Returns the Phase 2 fundamentals dict (or None when yfinance has no
-    statement data).  Cache key: {TICKER}_fund_{YYYY}W{WW}.pkl
-    TTL = one ISO calendar week (balance sheets change at most quarterly).
+    statement data).  Cache key: {TICKER}_fund.pkl — no auto-expiry by
+    default. Fundamentals (ROCE, ROE, Net D/E, TTM Net Profit, OPM, etc.)
+    only change when a company posts quarterly results, not daily or weekly —
+    so once fetched, this is cached indefinitely for every normal caller
+    (all 4 scanners use the default `max_age_days=None`) and only refreshed
+    as a side effect of the daily OHLCV/scanner pipeline never triggers it.
+
+    force=True always bypasses the cache (used by the "Refresh Fundamentals"
+    full-refresh mode). max_age_days, when set, treats a cache file older
+    than that many days (by file mtime) as stale too — used by the
+    "Refresh Fundamentals" *incremental* mode to only re-fetch tickers whose
+    data plausibly predates their last quarterly result, without forcing
+    every ticker in the universe.
+
+    A cached `None` is never trusted or written: a failed fetch (transient
+    yfinance error/rate-limit, not "no data exists") retries on the very next
+    call rather than being frozen as a false negative.
     """
     from f40_backtest_common import fetch_fundamental_metrics
+
+    CACHE_DIR.mkdir(exist_ok=True)
+    cache_file = CACHE_DIR / f"{ticker}_fund.pkl"
+
+    is_stale_by_age = (
+        max_age_days is not None
+        and cache_file.exists()
+        and (time.time() - cache_file.stat().st_mtime) / 86400 > max_age_days
+    )
+
+    if not force and not is_stale_by_age and cache_file.exists():
+        try:
+            with open(cache_file, "rb") as fh:
+                cached = pickle.load(fh)
+            if cached is not None:
+                return cached
+            # Previously cached failure — fall through and retry instead of
+            # re-serving the None indefinitely.
+        except Exception:
+            cache_file.unlink(missing_ok=True)
+
+    result = fetch_fundamental_metrics(ticker)
+    if result is not None:
+        try:
+            with open(cache_file, "wb") as fh:
+                pickle.dump(result, fh)
+        except Exception:
+            pass
+    return result
+
+
+def get_stock_pe(ticker: str) -> Optional[float]:
+    """
+    Weekly-cached wrapper around fetch_stock_pe (current trailing P/E).
+
+    yfinance's `.info` call is one of its slowest/most rate-limited endpoints —
+    caching it means same-week reruns skip it entirely instead of re-hitting it
+    for every ticker on every pipeline run.
+    Cache key: {TICKER}_pecur_{YYYY}W{WW}.pkl
+    """
+    from f40_backtest_common import fetch_stock_pe
 
     CACHE_DIR.mkdir(exist_ok=True)
     today    = date.today()
     iso      = today.isocalendar()
     week_key = f"{iso.year}W{iso.week:02d}"
-    cache_file = CACHE_DIR / f"{ticker}_fund_{week_key}.pkl"
+    cache_file = CACHE_DIR / f"{ticker}_pecur_{week_key}.pkl"
 
     if cache_file.exists():
         try:
@@ -133,7 +199,37 @@ def get_fundamental_metrics(
         except Exception:
             cache_file.unlink(missing_ok=True)
 
-    result = fetch_fundamental_metrics(ticker)
+    result = fetch_stock_pe(ticker)
+    try:
+        with open(cache_file, "wb") as fh:
+            pickle.dump(result, fh)
+    except Exception:
+        pass
+    return result
+
+
+def get_historical_pe_avgs(ticker: str) -> Tuple[Optional[float], Optional[float]]:
+    """
+    Weekly-cached wrapper around fetch_historical_pe_avgs (3yr/5yr average
+    trailing PE, derived from annual EPS + a monthly price history call).
+    Cache key: {TICKER}_peavgs_{YYYY}W{WW}.pkl
+    """
+    from f40_backtest_common import fetch_historical_pe_avgs
+
+    CACHE_DIR.mkdir(exist_ok=True)
+    today    = date.today()
+    iso      = today.isocalendar()
+    week_key = f"{iso.year}W{iso.week:02d}"
+    cache_file = CACHE_DIR / f"{ticker}_peavgs_{week_key}.pkl"
+
+    if cache_file.exists():
+        try:
+            with open(cache_file, "rb") as fh:
+                return pickle.load(fh)
+        except Exception:
+            cache_file.unlink(missing_ok=True)
+
+    result = fetch_historical_pe_avgs(ticker)
     try:
         with open(cache_file, "wb") as fh:
             pickle.dump(result, fh)

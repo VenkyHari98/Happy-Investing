@@ -31,7 +31,9 @@ DATA DICT KEYS (per ticker):
     price_to_book       float | None   — current P/B
     roce_latest         float | None   — latest ROCE %
     roe_latest          float | None   — latest ROE %
-    pledged_pct_latest  float | None   — latest promoter pledge %
+    pledged_pct_latest  float | None   — latest promoter pledge % (fetched via the
+                                         quick_ratios AJAX call, not the main page —
+                                         see ScreenerClient._fetch_pledged_pct)
     eps_annual          dict           — {period_label: float}  e.g. "Mar 2024": 115.2
     opm_pct             dict           — annual OPM%
     roce_annual         dict           — annual ROCE%
@@ -39,6 +41,7 @@ DATA DICT KEYS (per ticker):
     sales_cr            dict           — annual Revenue (₹ Cr)
     net_profit_cr       dict           — annual Net Profit (₹ Cr)
     promoter_pct        dict           — quarterly promoter holding %
+    promoter_pct_latest float | None   — latest promoter holding %
     pledged_pct         dict           — quarterly pledge %
     net_de_annual       dict           — computed net D/E from balance sheet
     fetched_date        str            — ISO date of last fetch
@@ -66,7 +69,11 @@ except ImportError:
 SCREENER_BASE    = "https://www.screener.in"
 _STORE_DIR       = Path(__file__).parent / ".store" / "screener"
 _DEFAULT_CREDS   = Path(__file__).resolve().parent.parent.parent / "screener_credentials.json"
-CACHE_AGE_DAYS   = 7
+PROGRESS_FILE    = (Path(__file__).resolve().parent.parent.parent
+                     / "Source Data" / "Downloaded Data" / "fundamentals_progress.json")
+CACHE_AGE_DAYS   = 90    # ~1 quarter — fundamentals only change on quarterly results,
+                          # not week to week (was 7, which made almost every ticker
+                          # "stale" on every refresh for no real reason)
 REQUEST_DELAY    = 0.8   # seconds between requests — be polite to Screener.in
 
 
@@ -146,6 +153,45 @@ def _series(table: Dict, *keys: str) -> Dict[str, float]:
     return {}
 
 
+_MONTH_ABBR = {m.lower(): i for i, m in enumerate(
+    ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"], start=1
+)}
+
+
+def parse_period_label(label: str) -> Optional[date]:
+    """Parse a Screener.in table column header (e.g. 'Mar 2024', 'Sep 2023')
+    into a comparable date. Returns None for labels with no year (e.g. 'TTM').
+
+    Never assume table/dict column order reflects chronological order —
+    Screener.in's P&L/ratio tables and its shareholding table use opposite
+    left-to-right conventions. Always sort explicitly via this parser.
+    """
+    m = re.search(r"([A-Za-z]{3})[A-Za-z]*\s+(\d{4})", label)
+    if m:
+        month = _MONTH_ABBR.get(m.group(1).lower())
+        if month:
+            return date(int(m.group(2)), month, 1)
+    m = re.search(r"(\d{4})", label)
+    if m:
+        return date(int(m.group(1)), 1, 1)
+    return None
+
+
+def series_sorted_desc(series: Dict[str, float]) -> List[Tuple[str, float]]:
+    """Return [(label, value), ...] sorted newest-first by parsed period date.
+    Entries whose label can't be parsed are dropped rather than guessed at."""
+    dated = [(parse_period_label(label), label, value) for label, value in (series or {}).items()]
+    dated = [(d, label, value) for d, label, value in dated if d is not None]
+    dated.sort(key=lambda item: item[0], reverse=True)
+    return [(label, value) for _, label, value in dated]
+
+
+def latest_value(series: Dict[str, float]) -> Optional[float]:
+    """Return the value for the most recent (by parsed date) period in series."""
+    ordered = series_sorted_desc(series)
+    return ordered[0][1] if ordered else None
+
+
 # ── Screener client ────────────────────────────────────────────────────────
 
 class ScreenerClient:
@@ -207,7 +253,7 @@ class ScreenerClient:
             raise RuntimeError(
                 "Screener.in login failed — check username/password in screener_credentials.json"
             )
-        print("  ✓ Screener.in login successful")
+        print("  [OK] Screener.in login successful")
 
     def _get(self, url: str) -> Optional["BeautifulSoup"]:
         try:
@@ -218,6 +264,68 @@ class ScreenerClient:
             print(f"    HTTP error {url}: {e}")
         return None
 
+    @staticmethod
+    def _parse_quick_ratios_html(html: str) -> Dict[str, float]:
+        """Parse the HTML fragment returned by /api/company/{warehouseId}/quick_ratios/
+        — a list of <li data-source="quick-ratio"><span class="name">NAME</span>
+        ...<span class="number">VALUE</span>...</li> — into {name: value}.
+
+        Deliberately does NOT use the shared _num() helper: _num() treats "0" as
+        "no data" (the right call for blank P&L/balance-sheet cells), but 0.00%
+        pledge is an extremely common, genuinely meaningful value here (most
+        companies pledge nothing) — treating it as null would silently drop the
+        single most common (and most reassuring) case.
+        """
+        soup = BeautifulSoup(html, "html.parser")
+        out: Dict[str, float] = {}
+        for li in soup.find_all("li", attrs={"data-source": "quick-ratio"}):
+            name_el = li.find("span", class_="name")
+            num_el = li.find("span", class_="number")
+            if name_el and num_el:
+                cleaned = re.sub(r"[₹,%\s]", "", num_el.get_text(strip=True))
+                try:
+                    out[name_el.get_text(strip=True)] = float(cleaned)
+                except ValueError:
+                    pass
+        return out
+
+    def _fetch_pledged_pct(self, warehouse_id: str, company_url: str) -> Optional[float]:
+        """Return the account's "Pledged percentage" quick-ratio for this company,
+        adding it as a quick ratio (once, ever — it's an account-wide setting, not
+        per-company) if this Screener.in account hasn't already got it configured.
+
+        Screener.in's company page shows a base #top-ratios list (PE, ROCE, ROE,
+        etc.) plus any ratios the logged-in user has personally added as "quick
+        ratios" — loaded via a separate AJAX call after page load, so a plain
+        page fetch never sees them. "Pledged percentage" isn't in the base list
+        for any account by default, but it IS a real, searchable, addable ratio
+        (/api/ratio/search/?q=pledge) — confirmed by adding it via the same POST
+        the site's own "+ Add Ratio" search box uses
+        (/api/company/{warehouseId}/quick_ratios/ with {"ratio_name": ...}), which
+        persists server-side per-account and then appears for every company.
+        """
+        if not warehouse_id:
+            return None
+        url = f"{SCREENER_BASE}/api/company/{warehouse_id}/quick_ratios/"
+        headers = {"X-Requested-With": "XMLHttpRequest", "Referer": company_url}
+        try:
+            r = self.session.get(url, headers=headers, timeout=15)
+            ratios = self._parse_quick_ratios_html(r.text) if r.status_code == 200 else {}
+            if "Pledged percentage" not in ratios:
+                csrf = self.session.cookies.get("csrftoken", "")
+                r2 = self.session.post(
+                    url,
+                    data={"ratio_name": "Pledged percentage"},
+                    headers={**headers, "X-CSRFToken": csrf},
+                    timeout=15,
+                )
+                if r2.status_code == 200:
+                    ratios.update(self._parse_quick_ratios_html(r2.text))
+            return ratios.get("Pledged percentage")
+        except Exception as e:
+            print(f"    Pledged % fetch error: {e}")
+            return None
+
     def fetch_company_data(self, ticker: str) -> Optional[Dict[str, Any]]:
         """
         Fetch and parse all available financial data for an NSE ticker.
@@ -226,17 +334,29 @@ class ScreenerClient:
         """
         soup = None
         consolidated = True
+        company_url = ""
         for suffix in ("/consolidated/", "/"):
             url = f"{SCREENER_BASE}/company/{ticker}{suffix}"
             s = self._get(url)
             if s and s.find("section", id="profit-loss"):
                 soup = s
                 consolidated = (suffix == "/consolidated/")
+                company_url = url
                 break
 
         if soup is None:
+            # Still made 1-2 real HTTP requests above even though nothing was
+            # found — stay polite regardless of outcome, not just on success.
+            time.sleep(REQUEST_DELAY)
             return None
 
+        time.sleep(REQUEST_DELAY)
+
+        # Pledged % — a separate AJAX call (quick_ratios), not in the main page
+        # HTML (see _fetch_pledged_pct docstring). One extra request per ticker.
+        info_el = soup.find(id="company-info")
+        warehouse_id = info_el.get("data-warehouse-id") if info_el else None
+        pledged_latest = self._fetch_pledged_pct(warehouse_id, company_url)
         time.sleep(REQUEST_DELAY)
 
         # ── Current snapshot ────────────────────────────────────────────────
@@ -262,22 +382,40 @@ class ScreenerClient:
         roe_annual    = _series(ratios, "ROE %", "Return on equity %", "ROE")
 
         total_debt    = _series(bs, "Borrowings", "Total Borrowings")
+        # "Equity Capital" on Screener's balance sheet is face-value share
+        # capital only (e.g. RELIANCE ~₹13,532cr) — NOT total shareholders'
+        # equity. Reserves must be added to get the real equity base; using
+        # Equity Capital alone as the denominator produces wildly inflated
+        # ratios (RELIANCE would show ~30x instead of ~0.4x).
         equity_cap    = _series(bs, "Equity Capital", "Share Capital")
+        reserves      = _series(bs, "Reserves")
 
         promoter_pct  = _series(sh, "Promoters", "Promoter", "Promoter & Promoter Group")
-        pledged_pct   = _series(sh, "Pledge %", "Pledged %", "Pledging %",
-                                 "% Pledged", "% of Promoter Shares Pledged")
+        public_pct    = _series(sh, "Public")
+        # Note: pledge % is NOT in this shareholding table at all (checked —
+        # never present, for any ticker) — see pledged_latest above, fetched
+        # separately via the quick_ratios AJAX call.
 
-        # Compute net D/E from balance sheet (total debt / equity capital)
+        # Approximate Gross D/E from balance sheet (total debt / total equity).
+        # Not "Net" D/E — Screener's standard balance-sheet section has no cash
+        # line to net out, unlike yfinance's — so this is only ever used as a
+        # last-resort fallback for years yfinance has no balance sheet at all
+        # (see f40_backtest_common.py's _screener_fill_gap_years_only), never
+        # as the primary source.
         net_de: Dict[str, float] = {}
         for period in total_debt:
             d = total_debt.get(period)
             e = equity_cap.get(period)
-            if d is not None and e and e > 0:
-                net_de[period] = round(d / e, 2)
+            r = reserves.get(period) or 0.0
+            total_equity = (e or 0.0) + r
+            if d is not None and total_equity > 0:
+                net_de[period] = round(d / total_equity, 2)
 
-        # Latest pledged %: first (most recent) value in the quarterly series
-        pledged_latest = next(iter(pledged_pct.values()), None) if pledged_pct else None
+        # Latest promoter %/public %: most recent by parsed period date — never
+        # assume the quarterly shareholding table's column order (see
+        # parse_period_label). (pledged_latest computed above, separately.)
+        promoter_latest = latest_value(promoter_pct)
+        public_latest   = latest_value(public_pct)
 
         return {
             "ticker":              ticker,
@@ -304,7 +442,10 @@ class ScreenerClient:
             "net_de_annual":       net_de,
             # Shareholding
             "promoter_pct":        promoter_pct,
-            "pledged_pct":         pledged_pct,
+            "promoter_pct_latest": promoter_latest,
+            "public_pct":          public_pct,
+            "public_pct_latest":   public_latest,
+            "pledged_pct":         {},  # no historical series available — quick-ratios only exposes the latest value
             "pledged_pct_latest":  pledged_latest,
         }
 
@@ -365,6 +506,22 @@ def get_screener_data(
     return data
 
 
+# ── Progress reporting ───────────────────────────────────────────────────────
+# Best-effort only — a failure to write progress must never break the actual
+# fetch. Read by backend/api/routes/pipeline.py's GET /status for the
+# "Refresh Fundamentals" progress bar.
+
+def write_progress(phase: str, current: int, total: int, label: str = "") -> None:
+    try:
+        PROGRESS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        PROGRESS_FILE.write_text(
+            json.dumps({"phase": phase, "current": current, "total": total, "label": label}),
+            encoding="utf-8",
+        )
+    except Exception:
+        pass
+
+
 # ── Batch pull ─────────────────────────────────────────────────────────────
 
 def run_batch(
@@ -389,6 +546,7 @@ def run_batch(
     ok, failed = 0, []
 
     for i, ticker in enumerate(to_fetch, 1):
+        write_progress("screener", i - 1, len(to_fetch), ticker)
         print(f"  [{i:>3}/{len(to_fetch)}] {ticker:<20}", end=" ", flush=True)
         try:
             data = client.fetch_company_data(ticker)
@@ -406,8 +564,8 @@ def run_batch(
         except Exception as e:
             failed.append(ticker)
             print(f"ERROR: {e}")
-
-        time.sleep(REQUEST_DELAY)
+        # NOTE: fetch_company_data() already sleeps REQUEST_DELAY internally,
+        # right after its network request — do not add a second sleep here.
 
     print(f"\n  Done: {ok} ok, {len(failed)} failed")
     if failed:
@@ -449,4 +607,11 @@ if __name__ == "__main__":
         tickers  = list(stocks.keys())
         print(f"Tickers from watchlists: {len(tickers)}")
 
-    run_batch(tickers, Path(args.credentials), force=args.force)
+    # Credentials/login not being configured yet is an expected, soft-skippable
+    # state (not every environment has Screener.in set up) — never fail the
+    # exit code for it, since this step runs as part of the daily pipeline and
+    # a non-zero exit here would take down scanner/backtest steps too.
+    try:
+        run_batch(tickers, Path(args.credentials), force=args.force)
+    except (FileNotFoundError, ImportError, RuntimeError) as exc:
+        print(f"\n[Screener.in] Skipped — {exc}\n")

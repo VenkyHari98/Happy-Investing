@@ -21,6 +21,7 @@ import pandas as pd
 
 from f40_backtest_common import (
     Trade,
+    compute_fall_from_high,
     compute_portfolio_metrics,
     fetch_all_fundamentals_parallel,
     fetch_all_pe_parallel,
@@ -464,7 +465,7 @@ def build_price_series(
     ma_period: int = 200,
 ) -> List[Dict[str, Any]]:
     closes = df["close"].values.astype(float)
-    ma200v = pd.Series(closes).rolling(ma_period, min_periods=ma_period).values
+    ma200v = pd.Series(closes).rolling(ma_period, min_periods=ma_period).mean().values
 
     markers: Dict[str, List[Dict]] = {}
 
@@ -518,10 +519,26 @@ def _pattern_status(pat: Any, last_date: str, recent_days: int = 30) -> Optional
     return None
 
 
+RHS_OPEN_POSITIONS_MAX_DAYS = 90  # generous cap so a tracked breakout doesn't linger forever
+
+
+def _load_open_positions(path: Path) -> Dict[str, Dict[str, Any]]:
+    """Load the persisted RHS/CWH open-position tracker (scanner-only mode has
+    no backtest engine running to track "still open" positions, so this is a
+    small standalone store — see run_scanner's carry-forward logic below)."""
+    if not path.exists():
+        return {}
+    try:
+        with path.open(encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
 def run_scanner(
     watchlist_files,
     output_file: Path,
-    scan_years: int = 2,
+    scan_years: int = 10,  # needs 10y of history for the fall-from-10yr-high Must-Have gate
 ) -> None:
     """Scan F40+E40 for current RHS/CWH opportunities and write scanner_results.json."""
     output_file.parent.mkdir(parents=True, exist_ok=True)
@@ -530,6 +547,10 @@ def run_scanner(
 
     errors: List[str] = []
     stock_dfs = fetch_all_stocks_parallel(stocks, years=scan_years, errors=errors)
+
+    print(f"Fetching PE + fundamental data for {len(stock_dfs)} stocks...")
+    pe_map   = fetch_all_pe_parallel(stock_dfs.keys())
+    fund_map = fetch_all_fundamentals_parallel(stock_dfs.keys(), max_workers=4, errors=errors)
 
     opportunities: List[Dict[str, Any]] = []
     run_date = datetime.date.today().isoformat()
@@ -541,6 +562,34 @@ def run_scanner(
         ma200 = df["close"].rolling(200, min_periods=200).mean()
         last_date  = df.index[-1].strftime("%Y-%m-%d")
         last_close = float(df["close"].iloc[-1])
+
+        # ── Fundamental filter assessment (same shape as f40_opportunity_scanner.py) ──
+        ma_val = float(ma200.iloc[-1]) if not ma200.empty else float("nan")
+        below_200dma = not np.isnan(ma_val) and last_close < ma_val
+
+        pe_current, _, pe_5yr_avg = pe_map.get(ticker, (None, None, None))
+        pe_fails = []
+        if pe_current is not None and pe_current > cfg.PE_MAX:
+            pe_fails.append(f"PE {pe_current:.1f} > max {cfg.PE_MAX:.0f}")
+        if (cfg.PE_BELOW_5YR_MEDIAN and pe_5yr_avg is not None
+                and pe_current is not None and pe_current >= pe_5yr_avg):
+            pe_fails.append(f"PE {pe_current:.1f} >= 5yr avg {pe_5yr_avg:.1f}")
+        pe_pass = len(pe_fails) == 0
+
+        fund = fund_map.get(ticker)
+        p2_pass, p2_fails = cfg.apply_fundamental_filter_phase2(fund)
+
+        _, fall_from_10yr_high = compute_fall_from_high(df, years=10)
+        fall_pass, fall_fail_reason = cfg.check_fall_from_high(cap_tier, fall_from_10yr_high)
+        if fall_fail_reason:
+            p2_fails = [*p2_fails, fall_fail_reason]
+
+        fund_all_pass = (
+            (below_200dma or not cfg.REQUIRE_BELOW_200DMA)
+            and pe_pass
+            and p2_pass
+            and fall_pass
+        )
 
         for pat in detect_rhs_patterns(df, ma200) + detect_cwh_patterns(df, ma200):  # type: ignore[operator]
             status = _pattern_status(pat, last_date)
@@ -560,6 +609,30 @@ def run_scanner(
                 "target":          pat.target_price,
                 "last_date":       last_date,
                 "breakout_date":   pat.breakout_date,
+                "pe_current":                   pe_current,
+                "pe_5yr_avg":                   pe_5yr_avg,
+                "fund_below_200dma":            below_200dma,
+                "fund_fall_from_10yr_high_pct": fall_from_10yr_high,
+                "fund_fall_from_high_pass":     fall_pass,
+                "fund_pe_pass":                 pe_pass,
+                "fund_pe_fail_reasons":         pe_fails,
+                "fund_s3_s5_pass":              p2_pass,
+                "fund_s3_s5_fail_reasons":      p2_fails,
+                "fund_is_financial":            cfg.is_financial_sector(fund.get("sector", ""), fund.get("industry", "")) if fund else False,
+                "fund_roce":                    fund.get("roce_current")      if fund else None,
+                "fund_roe":                     fund.get("roe_current")       if fund else None,
+                "fund_net_de":                  fund.get("net_de_current")    if fund else None,
+                "fund_ttm_np_cr":               fund.get("ttm_np_cr")         if fund else None,
+                "fund_sales_vs_ath_pct":        fund.get("sales_vs_ath_pct")  if fund else None,
+                "fund_profit_vs_ath_pct":       fund.get("profit_vs_ath_pct") if fund else None,
+                "fund_tfa_vs_ath_pct":          fund.get("tfa_vs_ath_pct")    if fund else None,
+                "fund_opm_3yr":                 fund.get("opm_3yr")           if fund else None,
+                "fund_roce_source":             fund.get("roce_source")       if fund else None,
+                "fund_roe_source":              fund.get("roe_source")        if fund else None,
+                "fund_opm_source":              fund.get("opm_source")        if fund else None,
+                "fund_pledged_pct":             fund.get("pledged_pct")       if fund else None,
+                "fund_public_shareholding_pct": fund.get("public_shareholding_pct") if fund else None,
+                "fund_all_pass":                fund_all_pass,
             }
             if isinstance(pat, RHSPattern):
                 rec.update({
@@ -578,6 +651,64 @@ def run_scanner(
             opportunities.append(rec)
             print(f"  {ticker} [{pat.pattern_type}] {status}: neckline={pat.neckline_price:.1f} target={pat.target_price:.1f}")
 
+    # ── Open-position tracker: a BREAKOUT older than 30 days that hasn't hit
+    # target would otherwise just vanish from the scanner (see _pattern_status)
+    # with no record it ever happened, now that the full backtest's own
+    # open-position tracking is paused. Persist breakouts once seen and carry
+    # them forward — refreshing only price-dependent fields — until they hit
+    # target or age past RHS_OPEN_POSITIONS_MAX_DAYS.
+    open_positions_file = output_file.parent / "rhs_open_positions.json"
+    open_positions = _load_open_positions(open_positions_file)
+    fresh_keys = {
+        f"{o['ticker']}|{o['pattern_type']}|{o['breakout_date']}"
+        for o in opportunities if o["status"] == "BREAKOUT" and o["breakout_date"]
+    }
+
+    # Record/refresh bookkeeping for every breakout still naturally detected today.
+    for o in opportunities:
+        if o["status"] != "BREAKOUT" or not o["breakout_date"]:
+            continue
+        key = f"{o['ticker']}|{o['pattern_type']}|{o['breakout_date']}"
+        if key in open_positions:
+            open_positions[key].update({
+                "current_price":   o["current_price"],
+                "pct_to_neckline": o["pct_to_neckline"],
+                "last_date":       o["last_date"],
+            })
+        else:
+            open_positions[key] = {**o, "first_seen": run_date}
+
+    # Carry forward positions that fell out of natural detection (>30 days old).
+    for key, pos in list(open_positions.items()):
+        if key in fresh_keys:
+            continue
+
+        df = stock_dfs.get(pos["ticker"])
+        if df is None or df.empty:
+            del open_positions[key]
+            continue
+
+        current_price = float(df["close"].iloc[-1])
+        first_seen = pos.get("first_seen", run_date)
+        days_open = (datetime.date.fromisoformat(run_date) - datetime.date.fromisoformat(first_seen)).days
+
+        if current_price >= pos["target"] or days_open > RHS_OPEN_POSITIONS_MAX_DAYS:
+            del open_positions[key]
+            continue
+
+        updated = {
+            **pos,
+            "current_price":   round(current_price, 2),
+            "pct_to_neckline": round((pos["neckline"] - current_price) / current_price * 100.0, 2),
+            "last_date":       run_date,
+            "tracked_open":    True,
+            "first_seen":      first_seen,
+        }
+        open_positions[key] = updated
+        opportunities.append(updated)
+
+    _write_json(open_positions_file, open_positions)
+
     opportunities.sort(key=lambda x: (0 if x["status"] == "BREAKOUT" else 1, x["pct_to_neckline"]))
 
     _write_json(output_file, {
@@ -589,6 +720,7 @@ def run_scanner(
         "breakout_count": sum(1 for o in opportunities if o["status"] == "BREAKOUT"),
         "forming_count":  sum(1 for o in opportunities if o["status"] == "FORMING"),
         "opportunities":  opportunities,
+        "errors":         errors[:50],
     })
     print(f"Scanner done: {len(opportunities)} found.")
 
@@ -647,7 +779,7 @@ def run_backtest(
         )
         for k in total_fstats:
             total_fstats[k] += fstats[k]
-        print(f"  {ticker}: {len(rhs)} RHS + {len(cwh)} CWH → {len(trades)} trades, {len(open_pos)} open")
+        print(f"  {ticker}: {len(rhs)} RHS + {len(cwh)} CWH -> {len(trades)} trades, {len(open_pos)} open")
 
         all_trades.extend(trades)
         price_series = build_price_series(df, rhs, cwh)

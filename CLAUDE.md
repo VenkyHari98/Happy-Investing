@@ -9,7 +9,7 @@ simulations with configurable allocation tiers.
 
 ## Current Architecture
 Three layers — fully migrated, `web/` is legacy and no longer the target:
-- `Scripts/strategies/` — Python strategy engine (backtest engines, scanners, data cache). **DO NOT MODIFY.** Production-tested, contains all business logic.
+- `Scripts/strategies/` — Python strategy engine (backtest engines, scanners, data cache). Production-tested technical logic — treat as stable and avoid touching it for frontend/backend work. **Exception:** the fundamental-screening layer (`fundamental_config.py` and the fundamentals-fetching code in `f40_backtest_common.py`) is under active development — see "Fundamental Screening (Must-Have Gates)" below.
 - `backend/` — FastAPI wrapper (`backend/api/`) that imports engine modules from `Scripts/strategies/`. Runs on port 8000.
 - `frontend/` — Next.js + TypeScript + Tailwind CSS v4 + Shadcn UI + TanStack Query. Runs on port 3000.
 
@@ -93,6 +93,27 @@ Banks, NBFCs, Insurance companies are treated specially:
 - Skip Net D/E and OPM checks
 - Matched by substring against: Bank, NBFC, Insurance, Microfinance, Housing Finance,
   Financial Services, Capital Markets, Consumer Finance, Diversified Financial
+
+## Fundamental Screening (Must-Have Gates)
+All thresholds live in `Scripts/strategies/fundamental_config.py`, applied by every
+scanner (`f40_opportunity_scanner.py`, `s200_20pct_rally_scanner.py`,
+`f40_backtest_rhs_cwh.py`) and attached to every opportunity row as `fund_*` fields
+(never hides a row — always shown with pass/fail + fail reasons):
+- Never buy above 200 DMA (`REQUIRE_BELOW_200DMA`)
+- Fallen from its 10-year high by at least: Large Cap 20%, Mid Cap 30%, Small Cap 40%
+  (`MIN_FALL_FROM_HIGH_PCT`, `check_fall_from_high()`) — a floor, not a ceiling; deeper
+  is always better
+- PE < 70 and PE < 5yr median (`PE_MAX`, `PE_BELOW_5YR_MEDIAN`)
+- Net D/E < 0.25, ROCE > 15% (ROE > 15% for financials), TTM Net Profit > ₹250 Cr
+- Public shareholding < 30%, promoter pledge < 5% (both sourced from Screener.in cache
+  via `screener_cache.py` — `_screener_public_shareholding()`/`_screener_pledged()`)
+- TTM Sales ≥ 90% of 10yr peak; TTM Net Profit ≥ 90% of 10yr peak **or** Tangible Fixed
+  Assets (Net PPE − Intangibles) ≥ 90% of its 10yr peak (asset-growth alt-pass)
+- OPM non-declining over the last 3 annual periods
+All scanners fetch 10 years of OHLCV (not the old 2-3y) to support the fall-from-high
+gate. Not yet implemented (Phase 2, deliberately deferred): Good-to-Have scoring
+(PE vs 10yr median, Market Cap/Sales, EV/EBITDA, price-CAGR-vs-profit-CAGR, Book Value),
+and a combined technical+fundamental opportunity ranking.
 
 ## Coding Conventions
 - Python: type hints everywhere, dataclasses for structured data, pathlib for paths

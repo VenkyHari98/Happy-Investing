@@ -7,6 +7,12 @@ import threading
 from typing import Literal
 from fastapi import APIRouter, HTTPException
 from ..paths import ROOT, DOWNLOADS, SCRIPTS, WATCHLISTS
+from ..cache import (
+    cache, TTL_BACKTEST,
+    KEY_BACKTEST_52W, KEY_BACKTEST_52W_STOCKS, KEY_BACKTEST_52W_TRADES,
+    KEY_BACKTEST_ENV, KEY_BACKTEST_ENV_STOCKS, KEY_BACKTEST_ENV_TRADES,
+    KEY_BACKTEST_S200, KEY_BACKTEST_S200_STOCKS,
+)
 
 router = APIRouter()
 
@@ -65,32 +71,68 @@ def _load_json(path):
 
 @router.get("/52w/summary")
 def backtest_52w_summary(years: Years = "10"):
-    return _load_json(DOWNLOADS / f"backtest_52w_{years}y" / "backtest_summary.json")
+    key = KEY_BACKTEST_52W.format(years=years)
+    hit = cache.get(key)
+    if hit is not None:
+        return hit
+    data = _load_json(DOWNLOADS / f"backtest_52w_{years}y" / "backtest_summary.json")
+    cache.set(key, data, TTL_BACKTEST)
+    return data
 
 
 @router.get("/52w/trades")
 def backtest_52w_trades(years: Years = "10"):
-    return _load_json(DOWNLOADS / f"backtest_52w_{years}y" / "trades.json")
+    key = KEY_BACKTEST_52W_TRADES.format(years=years)
+    hit = cache.get(key)
+    if hit is not None:
+        return hit
+    data = _load_json(DOWNLOADS / f"backtest_52w_{years}y" / "trades.json")
+    cache.set(key, data, TTL_BACKTEST)
+    return data
 
 
 @router.get("/52w/stocks")
 def backtest_52w_stocks(years: Years = "10"):
-    return _load_json(DOWNLOADS / f"backtest_52w_{years}y" / "stock_data.json")
+    key = KEY_BACKTEST_52W_STOCKS.format(years=years)
+    hit = cache.get(key)
+    if hit is not None:
+        return hit
+    data = _load_json(DOWNLOADS / f"backtest_52w_{years}y" / "stock_data.json")
+    cache.set(key, data, TTL_BACKTEST)
+    return data
 
 
 @router.get("/envelope/summary")
 def backtest_envelope_summary(years: Years = "10"):
-    return _load_json(DOWNLOADS / f"backtest_envelope_long_{years}y" / "backtest_summary.json")
+    key = KEY_BACKTEST_ENV.format(years=years)
+    hit = cache.get(key)
+    if hit is not None:
+        return hit
+    data = _load_json(DOWNLOADS / f"backtest_envelope_long_{years}y" / "backtest_summary.json")
+    cache.set(key, data, TTL_BACKTEST)
+    return data
 
 
 @router.get("/envelope/trades")
 def backtest_envelope_trades(years: Years = "10"):
-    return _load_json(DOWNLOADS / f"backtest_envelope_long_{years}y" / "trades.json")
+    key = KEY_BACKTEST_ENV_TRADES.format(years=years)
+    hit = cache.get(key)
+    if hit is not None:
+        return hit
+    data = _load_json(DOWNLOADS / f"backtest_envelope_long_{years}y" / "trades.json")
+    cache.set(key, data, TTL_BACKTEST)
+    return data
 
 
 @router.get("/envelope/stocks")
 def backtest_envelope_stocks(years: Years = "10"):
-    return _load_json(DOWNLOADS / f"backtest_envelope_long_{years}y" / "stock_data.json")
+    key = KEY_BACKTEST_ENV_STOCKS.format(years=years)
+    hit = cache.get(key)
+    if hit is not None:
+        return hit
+    data = _load_json(DOWNLOADS / f"backtest_envelope_long_{years}y" / "stock_data.json")
+    cache.set(key, data, TTL_BACKTEST)
+    return data
 
 
 @router.get("/envelope/run_status")
@@ -132,18 +174,35 @@ def envelope_run(
 
 @router.get("/s200/summary")
 def backtest_s200_summary(years: Years = "10"):
-    return _load_json(DOWNLOADS / f"s200_rally_backtest_{years}y" / "s200_backtest_summary.json")
+    key = KEY_BACKTEST_S200.format(years=years)
+    hit = cache.get(key)
+    if hit is not None:
+        return hit
+    data = _load_json(DOWNLOADS / f"s200_rally_backtest_{years}y" / "s200_backtest_summary.json")
+    cache.set(key, data, TTL_BACKTEST)
+    return data
 
 
 @router.get("/s200/stocks")
 def backtest_s200_stocks(years: Years = "10"):
-    return _load_json(DOWNLOADS / f"s200_rally_backtest_{years}y" / "s200_backtest_stock_data.json")
+    key = KEY_BACKTEST_S200_STOCKS.format(years=years)
+    hit = cache.get(key)
+    if hit is not None:
+        return hit
+    data = _load_json(DOWNLOADS / f"s200_rally_backtest_{years}y" / "s200_backtest_stock_data.json")
+    cache.set(key, data, TTL_BACKTEST)
+    return data
 
 
 @router.get("/s200/stock/{ticker}")
 def backtest_s200_stock_detail(ticker: str, years: Years = "10"):
-    data = _load_json(DOWNLOADS / f"s200_rally_backtest_{years}y" / "s200_backtest_stock_data.json")
-    stock_data = data.get("stock_data", {})
+    # Reuse the already-cached full stocks dict to avoid a separate disk read
+    stocks_key = KEY_BACKTEST_S200_STOCKS.format(years=years)
+    full = cache.get(stocks_key)
+    if full is None:
+        full = _load_json(DOWNLOADS / f"s200_rally_backtest_{years}y" / "s200_backtest_stock_data.json")
+        cache.set(stocks_key, full, TTL_BACKTEST)
+    stock_data = full.get("stock_data", {})
     if ticker not in stock_data:
         raise HTTPException(status_code=404, detail=f"{ticker} not found in S200 backtest data")
     return stock_data[ticker]

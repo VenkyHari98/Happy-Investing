@@ -32,7 +32,7 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from f40_backtest_common import fetch_historical_data, parse_f40_watchlist
+from f40_backtest_common import fetch_all_stocks_parallel, parse_f40_watchlist
 from s200_20pct_rally_scanner import BUY_ZONE_PCT, MIN_RALLY_PCT, SINGLE_CANDLE_MIN, find_20pct_rallies
 
 ROOT        = Path(__file__).resolve().parent.parent.parent
@@ -179,9 +179,8 @@ def _simulate_trade(
 
 
 def _backtest_stock(
-    ticker: str, cap_tier: str, sector: str, watchlist_source: str, errors: list
+    ticker: str, cap_tier: str, sector: str, watchlist_source: str, df: Optional[pd.DataFrame]
 ) -> List[SimTrade]:
-    df = fetch_historical_data(ticker, years=DATA_YEARS, errors=errors)
     if df is None or len(df) < 210:
         return []
 
@@ -264,9 +263,13 @@ def main():
     errors: list = []
     scanned = 0
 
+    print(f"Fetching OHLCV for {total} stocks (cached)...")
+    stock_dfs = fetch_all_stocks_parallel(stocks, years=DATA_YEARS, errors=errors)
+    print(f"  {len(stock_dfs)}/{total} stocks with usable price history")
+
     with ThreadPoolExecutor(max_workers=16) as pool:
         futs = {
-            pool.submit(_backtest_stock, ticker, cap_tier, sector, watchlist_source, errors):
+            pool.submit(_backtest_stock, ticker, cap_tier, sector, watchlist_source, stock_dfs.get(ticker)):
             (ticker, cap_tier, sector, watchlist_source)
             for ticker, (cap_tier, sector, watchlist_source) in stocks.items()
         }

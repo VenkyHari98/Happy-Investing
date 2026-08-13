@@ -3,6 +3,7 @@ import json
 from typing import Literal
 from fastapi import APIRouter, HTTPException
 from ..paths import DOWNLOADS
+from ..cache import cache, TTL_PORTFOLIO, KEY_PORTFOLIO_F40, KEY_PORTFOLIO_S200
 
 router = APIRouter()
 
@@ -39,9 +40,14 @@ def portfolio_f40(
     years: Years = "10",
 ):
     """F40 portfolio backtest. variant controls the strategy combination."""
+    key = KEY_PORTFOLIO_F40.format(variant=variant, years=years)
+    hit = cache.get(key)
+    if hit is not None:
+        return hit
     suffix = F40_VARIANTS[variant]
-    path = DOWNLOADS / f"f40_portfolio_backtest_{suffix}_{years}y.json"
-    return _load_json(path)
+    data = _load_json(DOWNLOADS / f"f40_portfolio_backtest_{suffix}_{years}y.json")
+    cache.set(key, data, TTL_PORTFOLIO)
+    return data
 
 
 @router.get("/f40/variants")
@@ -53,4 +59,10 @@ def portfolio_f40_variants():
 @router.get("/s200")
 def portfolio_s200(years: Years = "10"):
     """S200 portfolio backtest."""
-    return _load_json(DOWNLOADS / f"s200_portfolio_backtest_{years}y.json")
+    key = KEY_PORTFOLIO_S200.format(years=years)
+    hit = cache.get(key)
+    if hit is not None:
+        return hit
+    data = _load_json(DOWNLOADS / f"s200_portfolio_backtest_{years}y.json")
+    cache.set(key, data, TTL_PORTFOLIO)
+    return data

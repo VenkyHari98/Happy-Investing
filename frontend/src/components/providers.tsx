@@ -8,8 +8,11 @@ export function Providers({ children }: { children: React.ReactNode }) {
       new QueryClient({
         defaultOptions: {
           queries: {
-            staleTime: 5 * 60 * 1000, // 5 min — data refreshes once a day
+            staleTime: 60 * 60 * 1000,        // 1h — data refreshes once a day
+            gcTime: 24 * 60 * 60 * 1000,       // 24h — keep parsed JSON in JS heap all session
             retry: 1,
+            refetchOnWindowFocus: false,
+            refetchOnMount: false,
           },
         },
       })

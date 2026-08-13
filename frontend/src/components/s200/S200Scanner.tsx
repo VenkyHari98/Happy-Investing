@@ -1,5 +1,5 @@
 "use client";
-import { useState, useMemo } from "react";
+import React, { useState, useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -18,9 +18,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { S200ScannerData, S200Status } from "@/lib/types";
-import { fmtCur, fmtPct, fmtNum, fmtDate } from "@/lib/format";
+import { fmtCur, fmtPct, fmtDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { Tip } from "@/components/ui/tooltip";
+import { FundDetails } from "@/components/shared/FundDetails";
+import { getFundBadge, getFundStatus, type FundStatus } from "@/lib/fundBadge";
 
 const STATUS_COLORS: Record<S200Status, string> = {
   IN_ZONE:       "bg-green-500/20 text-green-400 border-green-500/30",
@@ -68,7 +70,10 @@ export function S200Scanner({ data }: Props) {
   const [watchlist, setWatchlist] = useState("ALL");
   const [sector, setSector] = useState("ALL");
   const [cap, setCap] = useState("ALL");
+  const [fundFilter, setFundFilter] = useState<FundStatus | "ALL">("ALL");
   const [sortOption, setSortOption] = useState<SortOption>("status");
+  const [dmaOnly, setDmaOnly] = useState(false);
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
 
   const sectors = useMemo(
     () => ["ALL", ...Array.from(new Set(data.rallies.map((r) => r.sector))).sort()],
@@ -87,18 +92,23 @@ export function S200Scanner({ data }: Props) {
     if (sector !== "ALL") t = t.filter((r) => r.sector === sector);
     if (cap !== "ALL") t = t.filter((r) => r.cap_tier === cap);
     if (watchlist !== "ALL") t = t.filter((r) => r.watchlist_source === watchlist);
+    if (dmaOnly) t = t.filter((r) => r.below_200dma === true);
+    if (fundFilter !== "ALL") t = t.filter((r) => getFundStatus(r) === fundFilter);
     return t;
-  }, [data.rallies, filter, search, sector, cap, watchlist]);
+  }, [data.rallies, filter, search, sector, cap, watchlist, dmaOnly, fundFilter]);
 
   const sorted = useMemo(() => {
     return [...filtered].sort((a, b) => {
+      // dist_to_buy_zone_pct is signed (negative when price has already fallen
+      // below the buy zone) — "closest to zone" always means smallest absolute
+      // distance, not smallest raw (signed) value.
       if (sortOption === "status") {
         const oa = STATUS_ORDER[a.status] ?? 9, ob = STATUS_ORDER[b.status] ?? 9;
         if (oa !== ob) return oa - ob;
-        return (a.dist_to_buy_zone_pct ?? 999) - (b.dist_to_buy_zone_pct ?? 999);
+        return Math.abs(a.dist_to_buy_zone_pct ?? 999) - Math.abs(b.dist_to_buy_zone_pct ?? 999);
       }
       if (sortOption === "closest_zone")
-        return (a.dist_to_buy_zone_pct ?? 999) - (b.dist_to_buy_zone_pct ?? 999);
+        return Math.abs(a.dist_to_buy_zone_pct ?? 999) - Math.abs(b.dist_to_buy_zone_pct ?? 999);
       if (sortOption === "highest_gain")
         return (b.remaining_gain_pct ?? 0) - (a.remaining_gain_pct ?? 0);
       if (sortOption === "expiring_soon")
@@ -259,6 +269,17 @@ export function S200Scanner({ data }: Props) {
             ))}
           </SelectContent>
         </Select>
+        <Tip content="Filter by whether the stock passes every Must-Have fundamental gate (ROCE/ROE, Net D/E, PE, pledge, public shareholding, sales/profit ATH, OPM trend)" below>
+          <Select value={fundFilter} onValueChange={(v) => setFundFilter((v ?? "ALL") as FundStatus | "ALL")}>
+            <SelectTrigger className="h-7 w-32 text-xs"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL" className="text-xs">All Fundamentals</SelectItem>
+              <SelectItem value="pass" className="text-xs">Pass Only</SelectItem>
+              <SelectItem value="fail" className="text-xs">Fail Only</SelectItem>
+              <SelectItem value="no_data" className="text-xs">No Data</SelectItem>
+            </SelectContent>
+          </Select>
+        </Tip>
         <Select value={sortOption} onValueChange={(v) => setSortOption((v ?? "status") as SortOption)}>
           <SelectTrigger className="h-7 w-52 text-xs">
             <SelectValue />
@@ -269,6 +290,19 @@ export function S200Scanner({ data }: Props) {
             ))}
           </SelectContent>
         </Select>
+        <Tip content="Show only setups whose buy zone is below the 200 DMA — a key strategy requirement. Above-DMA setups are invalid entries." below>
+          <button
+            onClick={() => setDmaOnly((v) => !v)}
+            className={cn(
+              "px-3 py-1 rounded text-xs font-medium border transition-colors",
+              dmaOnly
+                ? "bg-amber-500/20 text-amber-400 border-amber-500/30"
+                : "bg-muted/40 text-muted-foreground border-border hover:bg-muted"
+            )}
+          >
+            Below 200 DMA Only
+          </button>
+        </Tip>
         <span className="text-xs text-muted-foreground ml-auto">{sorted.length} rallies</span>
       </div>
 
@@ -289,17 +323,23 @@ export function S200Scanner({ data }: Props) {
               <TableHead className="text-right"><Tip content="Remaining % upside from current price to the target — how much profit is still available" below><span className="cursor-default">Rem. Gain</span></Tip></TableHead>
               <TableHead className="text-right"><Tip content="The size of the original 20%+ rally that created this setup" below><span className="cursor-default">Rally%</span></Tip></TableHead>
               <TableHead className="text-right"><Tip content="Number of price bars (days) the rally took from base to peak" below><span className="cursor-default">Candles</span></Tip></TableHead>
-              <TableHead className="text-right"><Tip content="Date when the original rally peaked" below><span className="cursor-default">Rally End</span></Tip></TableHead>
+              <TableHead className="text-right"><Tip content="Date when the original rally peaked (highest price of the rally)" below><span className="cursor-default">Rally Peak</span></Tip></TableHead>
               <TableHead className="text-right"><Tip content="Date when this rally setup expires — price must enter the buy zone before this date" below><span className="cursor-default">Expiry</span></Tip></TableHead>
               <TableHead className="text-right"><Tip content="Calendar days remaining before the setup expires" below><span className="cursor-default">Days Left</span></Tip></TableHead>
               <TableHead className="text-right"><Tip content="200-day moving average — a key trend filter for the strategy" below><span className="cursor-default">200 DMA</span></Tip></TableHead>
+              <TableHead className="text-right"><Tip content="Current Price-to-Earnings ratio" below><span className="cursor-default">PE</span></Tip></TableHead>
+              <TableHead className="text-right"><Tip content="5-year average PE — compare with current to judge if the stock is historically cheap" below><span className="cursor-default">5yr PE</span></Tip></TableHead>
+              <TableHead>Fundamentals</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {sorted.map((r, i) => {
               const isAboveDMA = r.status === "ABOVE_DMA";
+              const fundBadge = getFundBadge(r);
+              const isExpanded = expandedKey === String(i);
               return (
-              <TableRow key={i} className={cn("hover:bg-muted/30", isAboveDMA && "opacity-50")}>
+              <React.Fragment key={i}>
+              <TableRow className={cn("hover:bg-muted/30", isAboveDMA && "opacity-50")}>
                 <TableCell className={cn("font-mono font-semibold", isAboveDMA ? "text-muted-foreground" : "text-primary")}>{r.ticker}</TableCell>
                 <TableCell>
                   <span className={cn(
@@ -332,7 +372,7 @@ export function S200Scanner({ data }: Props) {
                 <TableCell className="text-right">
                   <span className={cn("tabular-nums text-xs font-medium", r.status === "IN_ZONE" ? "text-green-400" : "text-muted-foreground")}>
                     {r.dist_to_buy_zone_pct != null
-                      ? r.dist_to_buy_zone_pct === 0 ? "In zone" : `+${fmtNum(r.dist_to_buy_zone_pct)}%`
+                      ? r.dist_to_buy_zone_pct === 0 ? "In zone" : fmtPct(r.dist_to_buy_zone_pct)
                       : "—"}
                   </span>
                 </TableCell>
@@ -343,7 +383,7 @@ export function S200Scanner({ data }: Props) {
                   {r.candle_count ?? "—"}
                 </TableCell>
                 <TableCell className="text-right tabular-nums text-xs text-muted-foreground">
-                  {r.rally_start_date ? fmtDate(r.rally_start_date) : "—"}
+                  {r.rally_end_date ? fmtDate(r.rally_end_date) : r.rally_start_date ? fmtDate(r.rally_start_date) : "—"}
                 </TableCell>
                 <TableCell className="text-right tabular-nums text-xs text-muted-foreground">
                   {r.expiry_date ? fmtDate(r.expiry_date) : "—"}
@@ -352,12 +392,37 @@ export function S200Scanner({ data }: Props) {
                   {r.days_to_expiry}d
                 </TableCell>
                 <TableCell className="text-right tabular-nums text-xs text-amber-400">{fmtCur(r.ma200)}</TableCell>
+                <TableCell className="text-right tabular-nums text-xs">
+                  {r.pe_current != null ? `${r.pe_current.toFixed(1)}x` : "—"}
+                </TableCell>
+                <TableCell className="text-right tabular-nums text-xs text-muted-foreground">
+                  {r.pe_5yr_avg != null ? `${r.pe_5yr_avg.toFixed(1)}x` : "—"}
+                </TableCell>
+                <TableCell>
+                  <Tip content={isExpanded ? "Click to collapse fundamentals breakdown" : "Click to see full fundamentals: ROCE, D/E, OPM trend, Sales ATH, Pledged %, and why it passes/fails"} below>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setExpandedKey(isExpanded ? null : String(i)); }}
+                      className={cn("inline-flex items-center px-2 py-0.5 rounded-full text-[10px] border transition-colors cursor-pointer hover:opacity-80", fundBadge.cls)}
+                    >
+                      {fundBadge.label}
+                      <span className="ml-1 opacity-50">{isExpanded ? "▲" : "▼"}</span>
+                    </button>
+                  </Tip>
+                </TableCell>
               </TableRow>
+              {isExpanded && (
+                <TableRow className="hover:bg-transparent">
+                  <TableCell colSpan={19} className="p-0">
+                    <FundDetails row={r} />
+                  </TableCell>
+                </TableRow>
+              )}
+              </React.Fragment>
               );
             })}
             {sorted.length === 0 && (
               <TableRow>
-                <TableCell colSpan={16} className="text-center text-muted-foreground py-8">
+                <TableCell colSpan={19} className="text-center text-muted-foreground py-8">
                   No rallies match this filter
                 </TableCell>
               </TableRow>

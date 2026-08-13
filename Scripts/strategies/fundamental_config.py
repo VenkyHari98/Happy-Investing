@@ -14,6 +14,42 @@ import bisect
 # Never buy above 200 DMA
 REQUIRE_BELOW_200DMA: bool = True
 
+# Fall-from-10yr-high is informational only (2026-07) — no longer gates
+# fund_all_pass. The % is still computed and shown on every row so it can
+# inform the decision, but the call on "is this fall deep enough" is
+# deliberately left to the user, weighed against how strong the fundamentals
+# are — not a hard floor. Set True to make it a Must-Have gate again.
+REQUIRE_FALL_FROM_HIGH: bool = False
+
+# Reference fall-from-10yr-high by cap tier — used for the informational
+# threshold shown in the UI, and as the actual gate when REQUIRE_FALL_FROM_HIGH
+# is True. "More down = better" (see GTH_PREFER_DEEPER_FALL below) — these are
+# floors, not a disqualifying upper bound. Keys must match the cap-tier
+# strings used in watchlist files.
+MIN_FALL_FROM_HIGH_PCT: dict = {
+    "Large Cap": 20.0,
+    "Mid Cap":   30.0,
+    "Small Cap": 40.0,
+}
+
+
+def check_fall_from_high(cap_tier, fall_pct):
+    """
+    Check a stock's % fall from its 10-year high against its cap-tier minimum.
+
+    fall_pct : % fall from the 10yr high (0 = at the high, 100 = fallen to zero).
+    Returns (pass: bool, fail_reason: str | None). Always passes when
+    REQUIRE_FALL_FROM_HIGH is False (informational only — see above). Also
+    skipped (pass=True) when fall_pct is None or cap_tier isn't a recognised
+    bucket — never block on missing data.
+    """
+    min_fall = MIN_FALL_FROM_HIGH_PCT.get(cap_tier)
+    if not REQUIRE_FALL_FROM_HIGH or min_fall is None or fall_pct is None:
+        return True, None
+    if fall_pct < min_fall:
+        return False, f"fall_from_10yr_high={fall_pct:.1f}%<{min_fall:.0f}% ({cap_tier})"
+    return True, None
+
 # ============================================================
 # SECTION 2 — VALUATION (MUST HAVE)
 # ============================================================
@@ -33,7 +69,14 @@ MIN_MARKET_CAP_CR: float = 3000.0
 MAX_NET_DEBT_TO_EQUITY: float = 0.25
 
 MIN_ROCE: float = 15.0         # Non-financial companies
-MIN_ROE: float = 15.0          # Banks / NBFCs (used when ROCE not applicable)
+
+# Banks/NBFCs/Insurance run structurally lower ROE than a 15% non-financial bar —
+# private bank sector average is ~14% (2025), quality NBFCs like Bajaj Finance/
+# Cholamandalam run 15-17% but their ROCE is only ~9-11% (confirming ROCE isn't the
+# right metric here), and healthy life insurers (HDFC Life ~11-12%) are described as
+# "reasonable" well below 15%. 12% clears the weakest legitimately-healthy sub-segment
+# (life insurance) without gutting the bar — single-digit ROE is the real distress signal.
+MIN_ROE: float = 12.0          # Banks / NBFCs / Insurance (used when ROCE not applicable)
 
 # Sectors treated as financial (use ROE instead of ROCE, skip net D/E + OPM checks)
 # Matched against both yfinance 'sector' and 'industry' fields (case-insensitive substring)
@@ -43,7 +86,10 @@ FINANCIAL_SECTORS: list = [
     "Diversified Financial", "Consumer Finance",
 ]
 
-MIN_TTM_NET_PROFIT_CR: float = 250.0   # TTM Net Profit > 250 crore
+MIN_TTM_NET_PROFIT_CR: float = 250.0             # Non-financial companies
+# Net D/E is skipped for financials (see above), so it can no longer screen out small,
+# weak lenders/insurers by leverage — the profit-scale bar compensates instead.
+MIN_TTM_NET_PROFIT_CR_FINANCIAL: float = 1000.0  # Banks / NBFCs / Insurance
 
 # ============================================================
 # SECTION 4 — GOVERNANCE (MUST HAVE)
@@ -150,6 +196,19 @@ def _fwd_fill(series_dict: dict, at_date: str):
     return series_dict[keys[idx]] if idx >= 0 else None
 
 
+def is_financial_sector(sector: str, industry: str) -> bool:
+    """True if this stock's ROCE/ROE gate should use the financial-sector rules
+    (ROE, not ROCE — see MIN_ROE/MIN_ROCE above). Matched against yfinance's
+    'sector'/'industry' fields (case-insensitive substring against
+    FINANCIAL_SECTORS). Exposed standalone (not just inline in
+    apply_fundamental_filter_phase2) so scanners can attach it to their output
+    rows as fund_is_financial — the frontend needs to know which of ROCE/ROE is
+    actually gated for a given stock to color/threshold them correctly.
+    """
+    sector_str = f"{sector or ''} {industry or ''}".lower()
+    return any(s.lower() in sector_str for s in FINANCIAL_SECTORS)
+
+
 def apply_fundamental_filter_phase2(
     metrics,
     at_date=None,
@@ -172,8 +231,7 @@ def apply_fundamental_filter_phase2(
 
     sector   = metrics.get("sector",   "") or ""
     industry = metrics.get("industry", "") or ""
-    sector_str   = f"{sector} {industry}".lower()
-    is_financial = any(s.lower() in sector_str for s in FINANCIAL_SECTORS)
+    is_financial = is_financial_sector(sector, industry)
     fail_reasons = []
 
     # ── Market cap gate (universe filter — always uses current cap) ───────
@@ -205,18 +263,26 @@ def apply_fundamental_filter_phase2(
         if roe < MIN_ROE:
             fail_reasons.append(f"roe={roe:.1f}%<{MIN_ROE}%")
 
-    if ttm_np is not None and ttm_np < MIN_TTM_NET_PROFIT_CR:
-        fail_reasons.append(f"ttm_np={ttm_np:.0f}Cr<{MIN_TTM_NET_PROFIT_CR:.0f}Cr")
+    min_ttm_np = MIN_TTM_NET_PROFIT_CR_FINANCIAL if is_financial else MIN_TTM_NET_PROFIT_CR
+    if ttm_np is not None and ttm_np < min_ttm_np:
+        fail_reasons.append(f"ttm_np={ttm_np:.0f}Cr<{min_ttm_np:.0f}Cr")
 
     # ── Section 4: Governance ────────────────────────────────────────────
     pledged_pct = metrics.get("pledged_pct")
     if pledged_pct is not None and pledged_pct > MAX_PLEDGED_PCT:
         fail_reasons.append(f"pledged={pledged_pct:.1f}%>{MAX_PLEDGED_PCT:.1f}%")
 
+    public_shareholding_pct = metrics.get("public_shareholding_pct")
+    if public_shareholding_pct is not None and public_shareholding_pct > MAX_PUBLIC_SHAREHOLDING_PCT:
+        fail_reasons.append(
+            f"public_holding={public_shareholding_pct:.1f}%>{MAX_PUBLIC_SHAREHOLDING_PCT:.1f}%"
+        )
+
     # ── Section 5: Business Quality ───────────────────────────────────────
     if at_date:
         rev_s   = metrics.get("revenue_series_cr", {})
         prof_s  = metrics.get("profit_series_cr",  {})
+        tfa_s   = metrics.get("tfa_series",         {})
         opm_all = metrics.get("opm_series", [])  # [(date_str, pct), ...] newest-first
 
         # Sales vs ATH: compare most recent annual revenue to its peak up to at_date
@@ -230,19 +296,35 @@ def apply_fundamental_filter_phase2(
             if (len(prof_at) >= 2 and prof_at[-1] > 0) else None
         )
 
+        # Tangible Fixed Assets vs ATH — alt-pass for a failing Profit ATH check
+        tfa_at = [v for d, v in sorted(tfa_s.items()) if d <= at_date]
+        tfa_vs_ath = (
+            round(tfa_at[-1] / max(tfa_at) * 100, 1)
+            if (len(tfa_at) >= 2 and tfa_at[-1] > 0) else None
+        )
+
         # OPM trend: filter to dates known at at_date, keep newest-first order
         opm_hist = [(d, v) for d, v in opm_all if d <= at_date]
         opm_3yr  = [v for _, v in opm_hist[:3]]
     else:
         sales_vs_ath  = metrics.get("sales_vs_ath_pct")
         profit_vs_ath = metrics.get("profit_vs_ath_pct")
+        tfa_vs_ath    = metrics.get("tfa_vs_ath_pct")
         opm_3yr = metrics.get("opm_3yr") or []
 
     if sales_vs_ath is not None and sales_vs_ath < MIN_SALES_VS_ATH_PCT:
         fail_reasons.append(f"sales_vs_ath={sales_vs_ath:.0f}%<{MIN_SALES_VS_ATH_PCT:.0f}%")
 
+    # Profit ATH — Asset Growth Criteria is an alt-pass: a stock only fails here
+    # when it misses BOTH the profit-ATH check and the TFA-ATH check. Missing
+    # TFA data (None) does not penalize a stock that already passes on profit.
     if profit_vs_ath is not None and profit_vs_ath < MIN_PROFIT_VS_ATH_PCT:
-        fail_reasons.append(f"profit_vs_ath={profit_vs_ath:.0f}%<{MIN_PROFIT_VS_ATH_PCT:.0f}%")
+        tfa_alt_pass = tfa_vs_ath is not None and tfa_vs_ath >= MIN_TFA_VS_ATH_PCT
+        if not tfa_alt_pass:
+            fail_reasons.append(
+                f"profit_vs_ath={profit_vs_ath:.0f}%<{MIN_PROFIT_VS_ATH_PCT:.0f}%"
+                + (f" (tfa_vs_ath={tfa_vs_ath:.0f}%<{MIN_TFA_VS_ATH_PCT:.0f}%)" if tfa_vs_ath is not None else "")
+            )
 
     # OPM trend check: skip for financial sector (banks have no standard OPM)
     if REQUIRE_OPM_NON_DECLINING and not is_financial and len(opm_3yr) >= 3:
