@@ -8,11 +8,11 @@
   "envelope_pct": 14.0,
   "proximity_pct": 2.0,
   "signal_counts": {
+    "NO_IMMEDIATE_SIGNAL": 27,
     "52W_LOW_BUY_CANDIDATE": 6,
     "ENVELOPE_LONG_CANDIDATE": 5,
     "52W_HIGH_SELL_CANDIDATE": 4,
-    "ENVELOPE_SHORT_CANDIDATE": 6,
-    "NO_IMMEDIATE_SIGNAL": 27
+    "ENVELOPE_SHORT_CANDIDATE": 6
   },
   "fundamental_config": {
     "below_200dma_enforced": true,
