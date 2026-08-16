@@ -1,5 +1,5 @@
 {
-  "run_date": "2026-08-14",
+  "run_date": "2026-08-16",
   "stocks_scanned": 440,
   "total_found": 22,
   "filtered_low_gain_count": 414,
@@ -1160,6 +1160,7 @@
     }
   ],
   "errors": [
+    "TATAMOTORS (TATAMOTORS.NS): HTTP Error 404: ",
     "544467: no data from yfinance (NSE or BSE)",
     "TATAMOTORS: no data from yfinance (NSE or BSE)",
     "GSPL: fundamentals fetch failed after retry",
