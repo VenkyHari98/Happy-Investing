@@ -1,17 +1,17 @@
 {
-  "run_date": "2026-09-03",
+  "run_date": "2026-09-04",
   "watchlist_files": "[PosixPath('/home/runner/work/Happy-Investing/Happy-Investing/Source Data/Watchlist/F40.txt')]",
   "stocks_scanned": 40,
-  "candidate_count": 15,
+  "candidate_count": 16,
   "window_days": 252,
   "ma_period": 200,
   "envelope_pct": 14.0,
   "proximity_pct": 2.0,
   "signal_counts": {
-    "NO_IMMEDIATE_SIGNAL": 25,
-    "52W_LOW_BUY_CANDIDATE": 7,
-    "ENVELOPE_SHORT_CANDIDATE": 4,
-    "ENVELOPE_LONG_CANDIDATE": 9
+    "NO_IMMEDIATE_SIGNAL": 24,
+    "52W_LOW_BUY_CANDIDATE": 8,
+    "ENVELOPE_LONG_CANDIDATE": 10,
+    "ENVELOPE_SHORT_CANDIDATE": 4
   },
   "fundamental_config": {
     "below_200dma_enforced": true,
