@@ -1,5 +1,5 @@
 {
-  "run_date": "2026-10-19",
+  "run_date": "2026-10-20",
   "stocks_scanned": 79,
   "total_found": 6,
   "rhs_count": 1,
@@ -292,7 +292,6 @@
     }
   ],
   "errors": [
-    "INFY: store read/update error \u2014 Ran out of input",
     "TATAMOTORS (TATAMOTORS.NS): HTTP Error 404: ",
     "TATAMOTORS (TATAMOTORS.BO): HTTP Error 404: ",
     "TATAMOTORS: no data from yfinance (NSE or BSE)"
