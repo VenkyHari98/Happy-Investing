@@ -1,5 +1,5 @@
 {
-  "run_date": "2026-10-20",
+  "run_date": "2026-10-21",
   "watchlist_files": "[PosixPath('/home/runner/work/Happy-Investing/Happy-Investing/Source Data/Watchlist/F40.txt')]",
   "stocks_scanned": 40,
   "candidate_count": 10,
@@ -8,10 +8,9 @@
   "envelope_pct": 14.0,
   "proximity_pct": 2.0,
   "signal_counts": {
-    "ENVELOPE_LONG_CANDIDATE": 9,
     "NO_IMMEDIATE_SIGNAL": 30,
-    "52W_HIGH_SELL_CANDIDATE": 1,
-    "52W_LOW_BUY_CANDIDATE": 7
+    "52W_LOW_BUY_CANDIDATE": 7,
+    "ENVELOPE_LONG_CANDIDATE": 10
   },
   "fundamental_config": {
     "below_200dma_enforced": true,
@@ -20,12 +19,10 @@
     "phase2_enabled": true
   },
   "fundamental_counts": {
-    "all_pass": 9,
-    "below_200dma": 31,
+    "all_pass": 10,
+    "below_200dma": 35,
     "pe_pass": 34,
     "s3_s5_pass": 13
   },
-  "errors": [
-    "HCLTECH: store read/update error \u2014 Ran out of input"
-  ]
+  "errors": []
 }
