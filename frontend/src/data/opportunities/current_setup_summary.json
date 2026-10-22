@@ -1,16 +1,16 @@
 {
-  "run_date": "2026-10-21",
+  "run_date": "2026-10-22",
   "watchlist_files": "[PosixPath('/home/runner/work/Happy-Investing/Happy-Investing/Source Data/Watchlist/F40.txt')]",
   "stocks_scanned": 40,
-  "candidate_count": 10,
+  "candidate_count": 14,
   "window_days": 252,
   "ma_period": 200,
   "envelope_pct": 14.0,
   "proximity_pct": 2.0,
   "signal_counts": {
-    "NO_IMMEDIATE_SIGNAL": 30,
-    "52W_LOW_BUY_CANDIDATE": 7,
-    "ENVELOPE_LONG_CANDIDATE": 10
+    "NO_IMMEDIATE_SIGNAL": 26,
+    "52W_LOW_BUY_CANDIDATE": 10,
+    "ENVELOPE_LONG_CANDIDATE": 12
   },
   "fundamental_config": {
     "below_200dma_enforced": true,
@@ -24,5 +24,7 @@
     "pe_pass": 34,
     "s3_s5_pass": 13
   },
-  "errors": []
+  "errors": [
+    "HINDUNILVR: store read/update error \u2014 Ran out of input"
+  ]
 }
