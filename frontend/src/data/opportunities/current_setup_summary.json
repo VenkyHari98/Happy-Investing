@@ -1,5 +1,5 @@
 {
-  "run_date": "2026-11-09",
+  "run_date": "2026-11-10",
   "watchlist_files": "[PosixPath('/home/runner/work/Happy-Investing/Happy-Investing/Source Data/Watchlist/F40.txt')]",
   "stocks_scanned": 40,
   "candidate_count": 10,
@@ -25,5 +25,7 @@
     "pe_pass": 30,
     "s3_s5_pass": 13
   },
-  "errors": []
+  "errors": [
+    "INFY: store read/update error \u2014 Ran out of input"
+  ]
 }
